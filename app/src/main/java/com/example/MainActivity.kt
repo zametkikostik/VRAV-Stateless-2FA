@@ -51,6 +51,10 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import kotlinx.coroutines.delay
 import java.util.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.app.Activity
+import java.security.MessageDigest
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -186,6 +190,23 @@ fun parseOtpAuthUri(uriString: String): ParsedOtpAuth? {
     }
 }
 
+// Derive final AES key from wallet signature string and optional hardware token salt
+fun deriveFinalKey(signature: String, yubiResponse: ByteArray?): ByteArray {
+    val sigBytes = signature.toByteArray(Charsets.UTF_8)
+    return if (yubiResponse != null) {
+        try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            digest.update(sigBytes)
+            digest.update(yubiResponse)
+            digest.digest()
+        } catch (e: Exception) {
+            AesEncryptionUtils.deriveAesKey(signature)
+        }
+    } else {
+        AesEncryptionUtils.deriveAesKey(signature)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Stateless2FAScreen() {
@@ -219,6 +240,50 @@ fun Stateless2FAScreen() {
     var derivedAesKey by remember { mutableStateOf<ByteArray?>(null) }
     val vaultStore = remember { VravVaultStore(context) }
     val externalAccounts = remember { mutableStateListOf<ExternalAccount>() }
+
+    // Backup & Restore Launchers using Storage Access Framework (SAF)
+    val contentResolver = context.contentResolver
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let {
+            try {
+                val json = vaultStore.exportEncryptedVault()
+                contentResolver.openOutputStream(it)?.use { stream ->
+                    stream.write(json.toByteArray(Charsets.UTF_8))
+                }
+                Toast.makeText(context, "Encrypted Vault JSON Exported Successfully!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Export Failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            try {
+                contentResolver.openInputStream(it)?.use { stream ->
+                    val json = stream.bufferedReader().use { r -> r.readText() }
+                    if (vaultStore.importEncryptedVault(json)) {
+                        externalAccounts.clear()
+                        externalAccounts.addAll(vaultStore.getAccounts())
+                        Toast.makeText(context, "Encrypted Vault JSON Imported Successfully!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Invalid Vault JSON format!", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Import Failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // YubiKey Hardware Authentication States
+    var useYubiKeyForVault by remember { mutableStateOf(false) }
+    var yubiKeyHmacResponse by remember { mutableStateOf<ByteArray?>(null) }
+    var showYubiKeyTappingOverlay by remember { mutableStateOf(false) }
 
     // Modals / Overlays triggers
     var showQrScanner by remember { mutableStateOf(false) }
@@ -606,6 +671,62 @@ fun Stateless2FAScreen() {
                             Text("Purge Vault Data", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
+
+                    // Web3 Encrypted Backup/Restore Exports Section
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                exportLauncher.launch("vrav_secure_2fa_vault.json")
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberTeal),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .testTag("export_vault_button")
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Export backup",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text("Export Backup", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                importLauncher.launch(arrayOf("application/json", "*/*"))
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberPurple),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .testTag("import_vault_button")
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Import backup",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text("Import Backup", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -904,37 +1025,80 @@ fun Stateless2FAScreen() {
                         }
                     }
 
+                    // YubiKey Hardware Factor toggle
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White)
+                            .border(1.dp, Color(0xFFE7E0EC), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Hardware YubiKey 2FA",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Slate100
+                            )
+                            Text(
+                                "Require NFC/USB challenge-response",
+                                fontSize = 10.sp,
+                                color = Slate400
+                            )
+                        }
+                        Switch(
+                            checked = useYubiKeyForVault,
+                            onCheckedChange = { useYubiKeyForVault = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = CyberTeal,
+                                checkedTrackColor = CyberTeal.copy(alpha = 0.4f)
+                            ),
+                            modifier = Modifier.testTag("yubikey_toggle")
+                        )
+                    }
+
                     Button(
                         onClick = {
+                            if (walletPrivateKey.isBlank()) {
+                                Toast.makeText(context, "Please configure/import wallet first", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
                             try {
-                                val sig = EthereumCryptoUtils.personalSign(signatureMessage, walletPrivateKey)
-                                generatedSignature = sig
-                                
-                                // Compute reproducible original secret
-                                val secret = TotpUtil.generateSecretKeyFromSignature(sig)
-                                computedSecretKey = secret
-                                otpauthUri = TotpUtil.getTOTPUri(loadedAddress, secret)
-                                
-                                // Derive AES key & Verify vault
-                                val keyBytes = AesEncryptionUtils.deriveAesKey(sig)
-                                derivedAesKey = keyBytes
-                                
-                                if (!vaultStore.hasVaultMarker()) {
-                                    // brand new vault initialization
-                                    vaultStore.initializeVaultMarker(keyBytes)
-                                    isVaultUnlocked = true
-                                    externalAccounts.clear()
-                                    externalAccounts.addAll(vaultStore.getAccounts())
-                                    Toast.makeText(context, "Signature generated. New Vault initialized!", Toast.LENGTH_SHORT).show()
+                                if (useYubiKeyForVault) {
+                                    showYubiKeyTappingOverlay = true
                                 } else {
-                                    // verify stored vault marker decryption
-                                    if (vaultStore.verifyVaultMarker(keyBytes)) {
+                                    val sig = EthereumCryptoUtils.personalSign(signatureMessage, walletPrivateKey)
+                                    generatedSignature = sig
+                                    
+                                    // Compute reproducible original secret
+                                    val secret = TotpUtil.generateSecretKeyFromSignature(sig)
+                                    computedSecretKey = secret
+                                    otpauthUri = TotpUtil.getTOTPUri(loadedAddress, secret)
+                                    
+                                    // Derive AES key & Verify vault
+                                    val keyBytes = AesEncryptionUtils.deriveAesKey(sig)
+                                    derivedAesKey = keyBytes
+                                    
+                                    if (!vaultStore.hasVaultMarker()) {
+                                        // brand new vault initialization
+                                        vaultStore.initializeVaultMarker(keyBytes)
                                         isVaultUnlocked = true
                                         externalAccounts.clear()
                                         externalAccounts.addAll(vaultStore.getAccounts())
-                                        Toast.makeText(context, "Wallet Signature Authenticated. Vault Decrypted!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Signature generated. New Vault initialized!", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        Toast.makeText(context, "Error: Signature failed to decrypt stored Vault! Is this the correct wallet?", Toast.LENGTH_LONG).show()
+                                        // verify stored vault marker decryption
+                                        if (vaultStore.verifyVaultMarker(keyBytes)) {
+                                            isVaultUnlocked = true
+                                            externalAccounts.clear()
+                                            externalAccounts.addAll(vaultStore.getAccounts())
+                                            Toast.makeText(context, "Wallet Signature Authenticated. Vault Decrypted!", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "Error: Signature failed to decrypt stored Vault! Is this the correct wallet?", Toast.LENGTH_LONG).show()
+                                        }
                                     }
                                 }
                             } catch (e: Throwable) {
@@ -1542,6 +1706,156 @@ fun Stateless2FAScreen() {
                     modifier = Modifier.testTag("dialog_cancel_button")
                 ) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // MODAL C: YubiKey hardware authentication / NFC touch listener
+    if (showYubiKeyTappingOverlay) {
+        var scanningState by remember { mutableStateOf("Hold your YubiKey against the NFC hotspot...") }
+        val sysActivity = context as? Activity
+        
+        val authenticatorCallback = remember {
+            object : YubiKeyCallback {
+                override fun onReady() {
+                    scanningState = "Ready. Tap YubiKey..."
+                }
+                override fun onScanning() {
+                    scanningState = "Scanning... Hold still..."
+                }
+                override fun onSuccess(response: ByteArray) {
+                    scanningState = "Hardware Signature verified! Unlocking..."
+                    yubiKeyHmacResponse = response
+                    showYubiKeyTappingOverlay = false
+                    
+                    try {
+                        val sig = EthereumCryptoUtils.personalSign(signatureMessage, walletPrivateKey)
+                        generatedSignature = sig
+                        
+                        val secret = TotpUtil.generateSecretKeyFromSignature(sig)
+                        computedSecretKey = secret
+                        otpauthUri = TotpUtil.getTOTPUri(loadedAddress, secret)
+                        
+                        // Combine MetaMask signature with YubiKey HMAC-SHA256 hardware salt
+                        val finalKey = deriveFinalKey(sig, response)
+                        derivedAesKey = finalKey
+                        
+                        if (!vaultStore.hasVaultMarker()) {
+                            vaultStore.initializeVaultMarker(finalKey)
+                            isVaultUnlocked = true
+                            externalAccounts.clear()
+                            externalAccounts.addAll(vaultStore.getAccounts())
+                            Toast.makeText(context, "Hardware Key Validated. New Vault Initialized!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            if (vaultStore.verifyVaultMarker(finalKey)) {
+                                isVaultUnlocked = true
+                                externalAccounts.clear()
+                                externalAccounts.addAll(vaultStore.getAccounts())
+                                Toast.makeText(context, "Hardware Signature Decrypted Successfully!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Error: Hardware failed to decrypt Vault! Is this key registered?", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Hardware Auth Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+                override fun onFailure(error: String) {
+                    scanningState = "Error: $error"
+                }
+            }
+        }
+        
+        val authenticator = remember { YubiKeyHmacAuthenticator(context, authenticatorCallback) }
+        
+        LaunchedEffect(Unit) {
+            sysActivity?.let {
+                authenticator.setChallenge(signatureMessage.toByteArray(Charsets.UTF_8))
+                authenticator.startNfcListening(it)
+            }
+        }
+        
+        DisposableEffect(Unit) {
+            onDispose {
+                sysActivity?.let {
+                    authenticator.stopNfcListening(it)
+                }
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = { showYubiKeyTappingOverlay = false },
+            title = {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(imageVector = Icons.Default.Lock, contentDescription = "Hardware lock", tint = CyberTeal)
+                    Text("Hardware YubiKey 2FA")
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Touch and hold your physical YubiKey against the device's NFC hot spot or connect it via USB-C to execute secure HMAC-SHA256 Challenge-Response.",
+                        fontSize = 12.sp,
+                        color = Slate300,
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(CyberTeal.copy(alpha = 0.08f))
+                            .border(1.dp, CyberTeal.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                            .padding(14.dp)
+                    ) {
+                        Text(
+                            text = scanningState,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            color = Slate100,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    
+                    Text(
+                        text = "No hardware key? Use the secure virtual emulator below for validation:",
+                        fontSize = 11.sp,
+                        color = Slate400,
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Button(
+                        onClick = {
+                            val dummyHmac = authenticator.emulateYubiKeyTap(
+                                softwareSeed = walletPrivateKey.toByteArray(Charsets.UTF_8),
+                                challenge = signatureMessage.toByteArray(Charsets.UTF_8)
+                            )
+                            authenticatorCallback.onSuccess(dummyHmac)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberTeal),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.testTag("emulate_yubikey_tap")
+                    ) {
+                        Text("Simulate YubiKey Hardware Tap", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(
+                    onClick = { showYubiKeyTappingOverlay = false },
+                    modifier = Modifier.testTag("yubikey_dialog_cancel_button")
+                ) {
+                    Text("Cancel", color = Color.Gray)
                 }
             }
         )

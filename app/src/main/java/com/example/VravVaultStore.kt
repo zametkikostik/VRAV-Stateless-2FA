@@ -95,6 +95,46 @@ class VravVaultStore(private val context: Context) {
         sharedPrefs.edit().clear().apply()
     }
 
+    fun exportEncryptedVault(): String {
+        return try {
+            val externalAccounts = sharedPrefs.getString("external_accounts", "[]") ?: "[]"
+            val vaultDecMarker = sharedPrefs.getString("vault_dec_marker", "") ?: ""
+            val backupJson = JSONObject()
+            backupJson.put("version", 1)
+            backupJson.put("external_accounts", JSONArray(externalAccounts))
+            backupJson.put("vault_dec_marker", vaultDecMarker)
+            backupJson.toString(4) // Beautiful formatted JSON indentation
+        } catch (e: Exception) {
+            "{}"
+        }
+    }
+
+    fun importEncryptedVault(backupJsonString: String): Boolean {
+        return try {
+            val backupJson = JSONObject(backupJsonString)
+            val externalAccountsArray = backupJson.getJSONArray("external_accounts")
+            val vaultDecMarker = backupJson.optString("vault_dec_marker", "")
+
+            // Validate schema integrity
+            for (i in 0 until externalAccountsArray.length()) {
+                val obj = externalAccountsArray.getJSONObject(i)
+                if (!obj.has("id") || !obj.has("label") || !obj.has("issuer") || !obj.has("encryptedSecret")) {
+                    return false
+                }
+            }
+
+            val editor = sharedPrefs.edit()
+            editor.putString("external_accounts", externalAccountsArray.toString())
+            if (vaultDecMarker.isNotEmpty()) {
+                editor.putString("vault_dec_marker", vaultDecMarker)
+            }
+            editor.apply()
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     fun hasVaultMarker(): Boolean {
         return sharedPrefs.contains("vault_dec_marker")
     }
