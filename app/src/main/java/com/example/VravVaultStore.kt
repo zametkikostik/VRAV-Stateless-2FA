@@ -10,7 +10,9 @@ data class ExternalAccount(
     val id: String,
     val label: String,
     val issuer: String,
-    val encryptedSecret: String
+    val encryptedSecret: String,
+    val digits: Int = 6,
+    val period: Int = 30
 )
 
 class VravVaultStore(private val context: Context) {
@@ -43,7 +45,9 @@ class VravVaultStore(private val context: Context) {
                         id = obj.getString("id"),
                         label = obj.getString("label"),
                         issuer = obj.getString("issuer"),
-                        encryptedSecret = obj.getString("encryptedSecret")
+                        encryptedSecret = obj.getString("encryptedSecret"),
+                        digits = obj.optInt("digits", 6),
+                        period = obj.optInt("period", 30)
                     )
                 )
             }
@@ -62,6 +66,8 @@ class VravVaultStore(private val context: Context) {
                 obj.put("label", acc.label)
                 obj.put("issuer", acc.issuer)
                 obj.put("encryptedSecret", acc.encryptedSecret)
+                obj.put("digits", acc.digits)
+                obj.put("period", acc.period)
                 array.put(obj)
             }
             sharedPrefs.edit().putString("external_accounts", array.toString()).apply()

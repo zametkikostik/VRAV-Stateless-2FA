@@ -128,7 +128,9 @@ class MainActivity : ComponentActivity() {
 data class ParsedOtpAuth(
     val label: String,
     val issuer: String,
-    val secret: String
+    val secret: String,
+    val digits: Int = 6,
+    val period: Int = 30
 )
 
 // URI Parser
@@ -149,6 +151,8 @@ fun parseOtpAuthUri(uriString: String): ParsedOtpAuth? {
         val uri = android.net.Uri.parse(uriString)
         val secret = uri.getQueryParameter("secret") ?: return null
         var issuer = uri.getQueryParameter("issuer") ?: ""
+        val digits = uri.getQueryParameter("digits")?.toIntOrNull() ?: 6
+        val period = uri.getQueryParameter("period")?.toIntOrNull() ?: 30
         
         var path = uri.path ?: ""
         if (path.startsWith("/")) {
@@ -173,7 +177,9 @@ fun parseOtpAuthUri(uriString: String): ParsedOtpAuth? {
         ParsedOtpAuth(
             label = if (label.isNotEmpty()) label else "Account",
             issuer = issuer,
-            secret = secret.uppercase()
+            secret = secret.uppercase(),
+            digits = digits,
+            period = period
         )
     } catch (e: Exception) {
         null
@@ -241,8 +247,8 @@ fun Stateless2FAScreen() {
                         try {
                             val plainSecret = AesEncryptionUtils.decrypt(acc.encryptedSecret, derivedAesKey!!)
                             val secretBytes = TotpUtil.decodeBase32(plainSecret)
-                            val currentWindow = now / 30
-                            val code = TotpUtil.generateTotp(secretBytes, currentWindow)
+                            val currentWindow = now / acc.period
+                            val code = TotpUtil.generateTotp(secretBytes, currentWindow, acc.digits)
                             externalAccountsOtp[acc.id] = code
                         } catch (e: Exception) {
                             externalAccountsOtp[acc.id] = "ERRDEC"
@@ -1388,7 +1394,9 @@ fun Stateless2FAScreen() {
                                 id = UUID.randomUUID().toString(),
                                 label = parsed.label,
                                 issuer = parsed.issuer,
-                                encryptedSecret = encryptedSecret
+                                encryptedSecret = encryptedSecret,
+                                digits = parsed.digits,
+                                period = parsed.period
                             )
                             vaultStore.addAccount(newAcc)
                             externalAccounts.clear()
@@ -1412,6 +1420,8 @@ fun Stateless2FAScreen() {
         var inputLabel by remember { mutableStateOf("") }
         var inputIssuer by remember { mutableStateOf("Google") }
         var inputSecret by remember { mutableStateOf("") }
+        var inputDigits by remember { mutableStateOf("6") }
+        var inputPeriod by remember { mutableStateOf("30") }
 
         AlertDialog(
             onDismissRequest = { showManualAddDialog = false },
@@ -1454,6 +1464,29 @@ fun Stateless2FAScreen() {
                             focusedTextColor = CyberPurple
                         )
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = inputDigits,
+                            onValueChange = { inputDigits = it.filter { char -> char.isDigit() } },
+                            label = { Text("Digits (6 or 8)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f).testTag("manual_input_digits")
+                        )
+
+                        OutlinedTextField(
+                            value = inputPeriod,
+                            onValueChange = { inputPeriod = it.filter { char -> char.isDigit() } },
+                            label = { Text("Period (30s, 60s)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f).testTag("manual_input_period")
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -1471,6 +1504,9 @@ fun Stateless2FAScreen() {
                             return@Button
                         }
 
+                        val digitsVal = inputDigits.toIntOrNull() ?: 6
+                        val periodVal = inputPeriod.toIntOrNull() ?: 30
+
                         if (derivedAesKey != null) {
                             try {
                                 val encryptedSecret = AesEncryptionUtils.encrypt(uppercaseSecret, derivedAesKey!!)
@@ -1478,7 +1514,9 @@ fun Stateless2FAScreen() {
                                     id = UUID.randomUUID().toString(),
                                     label = inputLabel,
                                     issuer = inputIssuer,
-                                    encryptedSecret = encryptedSecret
+                                    encryptedSecret = encryptedSecret,
+                                    digits = digitsVal,
+                                    period = periodVal
                                 )
                                 vaultStore.addAccount(newAcc)
                                 externalAccounts.clear()
