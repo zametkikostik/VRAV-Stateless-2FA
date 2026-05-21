@@ -19,18 +19,21 @@ jobs:
       with:
         distribution: 'zulu'
         java-version: '17'
-        cache: 'gradle'
 
-    - name: Grant Execute Permission for Gradlew
-      run: chmod +x gradlew
+    # Устанавливаем официальный Gradle прямо в систему, чтобы не зависеть от битого jar-файла
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.5' # Стабильная версия для современных Android проектов
 
-    # Вырезаем ломающую debug-подпись AI Studio из корневого или модульного gradle файла
+    # Вырезаем ломающую debug-подпись AI Studio из gradle файлов
     - name: Fix AI Studio Signing Config Issue
       run: |
         find . -name "build.gradle.kts" -exec sed -i '/signingConfig = signingConfigs.getByName("debugConfig")/d' {} +
 
+    # Собираем APK напрямую через системный Gradle, минуя локальный враппер
     - name: Build Debug APK
-      run: ./gradlew assembleDebug
+      run: gradle assembleDebug
 
     - name: Upload Artifact (Get your APK here!)
       uses: actions/upload-artifact@v4
