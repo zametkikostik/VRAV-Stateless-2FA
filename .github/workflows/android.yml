@@ -1,8 +1,11 @@
 name: Build and Publish Release APKs
 
 on:
+  push:
+    branches: [ "main" ]
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -25,10 +28,6 @@ jobs:
       with:
         gradle-version: '8.5'
 
-    # Наш главный хак:
-    # 1. Создаем заглушку для ключа подписи
-    # 2. Вырезаем вызовы плагина KSP из build.gradle.kts, чтобы он не пытался запускать GUI в облаке
-    # 3. Перенаправляем подпись релиза на дебаг
     - name: Neutralize KSP and Bypass Signing
       run: |
         touch ./my-upload-key.jks
@@ -36,7 +35,6 @@ jobs:
         find . -name "build.gradle.kts" -exec sed -i 's/signingConfig = signingConfigs.getByName("release")/signingConfig = signingConfigs.getByName("debug")/g' {} +
         find . -name "build.gradle.kts" -exec sed -i '/signingConfig = signingConfigs.getByName("debugConfig")/d' {} +
 
-    # Запускаем сборку — теперь без KSP проект пролетит компиляцию моментально
     - name: Build Debug and Release APKs
       run: |
         $GRADLE_HOME/bin/gradle assemble --no-daemon
