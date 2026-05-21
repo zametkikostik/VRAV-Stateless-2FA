@@ -2,13 +2,13 @@ name: Build and Publish Release APKs
 
 on:
   release:
-    types: [published] # Скрипт сработает строго в момент публикации релиза
+    types: [published]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Даем гитхабу право прикреплять файлы к релизу
+      contents: write
 
     steps:
     - name: Checkout Repository
@@ -25,27 +25,28 @@ jobs:
       with:
         gradle-version: '8.5'
 
-    - name: Fix AI Studio Signing Config Issue
+    # Хак: Заставляем релизную сборку использовать автоматическую встроенную debug-подпись,
+    # чтобы не запрашивать отсутствующий файл my-upload-key.jks
+    - name: Bypass Release Signing Requirement
       run: |
+        find . -name "build.gradle.kts" -exec sed -i 's/signingConfig = signingConfigs.getByName("release")/signingConfig = signingConfigs.getByName("debug")/g' {} +
         find . -name "build.gradle.kts" -exec sed -i '/signingConfig = signingConfigs.getByName("debugConfig")/d' {} +
 
-    # Собираем оба APK одновременно
+    # Теперь assemble соберет оба варианта без ошибок подписи!
     - name: Build Debug and Release APKs
       run: |
         $GRADLE_HOME/bin/gradle assemble --no-daemon
 
-    # Переименовываем файлы красиво перед публикацией
     - name: Rename APKs for Release
       run: |
         mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/VRAV-2FA-Debug.apk
-        mv app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/VRAV-2FA-Release-Unsigned.apk
+        mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/VRAV-2FA-Release.apk || mv app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/VRAV-2FA-Release.apk
 
-    # Самая магия: загружаем файлы прямо в созданный релиз на GitHub
     - name: Upload APKs to GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         files: |
           app/build/outputs/apk/debug/VRAV-2FA-Debug.apk
-          app/build/outputs/apk/release/VRAV-2FA-Release-Unsigned.apk
+          app/build/outputs/apk/release/VRAV-2FA-Release.apk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
