@@ -9,6 +9,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,9 +35,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview as CameraPreviewBuilder
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import com.example.ui.theme.*
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
 import kotlinx.coroutines.delay
-import java.text.SimpleDateFormat
 import java.util.*
 
 class MainActivity : ComponentActivity() {
@@ -79,7 +92,7 @@ class MainActivity : ComponentActivity() {
                                             lineHeight = 18.sp
                                         )
                                         Text(
-                                            "STATELESS 2FA",
+                                            "HYBRID SECURE VAULT",
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = CyberPurple,
@@ -111,6 +124,62 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// Data holder for parsed otpauth URI
+data class ParsedOtpAuth(
+    val label: String,
+    val issuer: String,
+    val secret: String
+)
+
+// URI Parser
+fun parseOtpAuthUri(uriString: String): ParsedOtpAuth? {
+    return try {
+        val lower = uriString.trim()
+        if (!lower.lowercase().startsWith("otpauth://totp/")) {
+            // Also accept pure raw Base32 secret string from copy-paste
+            if (lower.matches(Regex("^[A-Z2-7]{10,64}$", RegexOption.IGNORE_CASE))) {
+                return ParsedOtpAuth(
+                    label = "Imported Token",
+                    issuer = "External App",
+                    secret = lower.uppercase()
+                )
+            }
+            return null
+        }
+        val uri = android.net.Uri.parse(uriString)
+        val secret = uri.getQueryParameter("secret") ?: return null
+        var issuer = uri.getQueryParameter("issuer") ?: ""
+        
+        var path = uri.path ?: ""
+        if (path.startsWith("/")) {
+            path = path.substring(1)
+        }
+        
+        var label = path
+        if (path.contains(":")) {
+            val parts = path.split(":", limit = 2)
+            val pathIssuer = parts[0].trim()
+            val pathLabel = parts[1].trim()
+            if (issuer.isEmpty()) {
+                issuer = pathIssuer
+            }
+            label = pathLabel
+        }
+        
+        if (issuer.isEmpty()) {
+            issuer = "External Service"
+        }
+        
+        ParsedOtpAuth(
+            label = if (label.isNotEmpty()) label else "Account",
+            issuer = issuer,
+            secret = secret.uppercase()
+        )
+    } catch (e: Exception) {
+        null
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Stateless2FAScreen() {
@@ -126,7 +195,7 @@ fun Stateless2FAScreen() {
     // Constants
     val signatureMessage = "Sign this message to securely generate your VRAV 2FA Secret Key"
 
-    // 2. Auth Flow States
+    // 2. Original Auth Flow States
     var generatedSignature by remember { mutableStateOf("") }
     var computedSecretKey by remember { mutableStateOf("") }
     var otpauthUri by remember { mutableStateOf("") }
@@ -135,24 +204,53 @@ fun Stateless2FAScreen() {
     var enteredVerifyToken by remember { mutableStateOf("") }
     var verificationStatus by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
 
-    // 4. Countdown states for live authenticating preview
+    // Countdown / ticking state
     var currentTime by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
     var liveOtpCode by remember { mutableStateOf("000000") }
 
+    // 4. VAULT SYSTEM STATES
+    var isVaultUnlocked by remember { mutableStateOf(false) }
+    var derivedAesKey by remember { mutableStateOf<ByteArray?>(null) }
+    val vaultStore = remember { VravVaultStore(context) }
+    val externalAccounts = remember { mutableStateListOf<ExternalAccount>() }
+
+    // Modals / Overlays triggers
+    var showQrScanner by remember { mutableStateOf(false) }
+    var showManualAddDialog by remember { mutableStateOf(false) }
+
+    // Map to keep track of live external OTP codes updated at launch
+    val externalAccountsOtp = remember { mutableStateMapOf<String, String>() }
+
     // Background ticking timer
-    LaunchedEffect(key1 = computedSecretKey) {
+    LaunchedEffect(key1 = computedSecretKey, key2 = externalAccounts.size, key3 = isVaultUnlocked) {
         while (true) {
             try {
                 val now = System.currentTimeMillis() / 1000
                 currentTime = now
                 
+                // Root statutory reproducible key
                 if (computedSecretKey.isNotEmpty() && computedSecretKey != "ERRORGENERATE2FA") {
                     val secretBytes = TotpUtil.decodeBase32(computedSecretKey)
                     val currentWindow = now / 30
                     liveOtpCode = TotpUtil.generateTotp(secretBytes, currentWindow)
                 }
+
+                // External saved decrypted accounts update
+                if (isVaultUnlocked && derivedAesKey != null) {
+                    externalAccounts.forEach { acc ->
+                        try {
+                            val plainSecret = AesEncryptionUtils.decrypt(acc.encryptedSecret, derivedAesKey!!)
+                            val secretBytes = TotpUtil.decodeBase32(plainSecret)
+                            val currentWindow = now / 30
+                            val code = TotpUtil.generateTotp(secretBytes, currentWindow)
+                            externalAccountsOtp[acc.id] = code
+                        } catch (e: Exception) {
+                            externalAccountsOtp[acc.id] = "ERRDEC"
+                        }
+                    }
+                }
             } catch (t: Throwable) {
-                // Prevent crash in background ticking thread
+                // Ignore exceptions in timer threat
             }
             delay(1000)
         }
@@ -169,7 +267,7 @@ fun Stateless2FAScreen() {
         verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // App intro
+        // Core description
         Text(
             text = "Stateless, zero-gas, database-free 2FA bridging Web3 Elliptic Curve signatures with standard TOTP Google Authenticator algorithm.",
             color = Slate400,
@@ -179,6 +277,332 @@ fun Stateless2FAScreen() {
                 .padding(horizontal = 12.dp)
                 .widthIn(max = 500.dp)
         )
+
+        // VAULT DECRYPTED AREA (Displays only if unlocked)
+        if (isVaultUnlocked) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 600.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF1FDF4)), // Emerald-tinted theme
+                border = BorderStroke(1.5.dp, CyberEmerald)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Vault icon",
+                                tint = CyberEmerald,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Column {
+                                Text(
+                                    "🔒 SECURE VAULT DECRYPTED",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF0F5132)
+                                )
+                                Text(
+                                    "Saved Accounts Decrypted is Active",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF198754)
+                                )
+                            }
+                        }
+
+                        // Countdown circle loader
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                progress = { progressPercent },
+                                strokeWidth = 3.dp,
+                                color = CyberEmerald,
+                                trackColor = Color(0xFFD1E7DD),
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Text(
+                                text = "${remainingSeconds}s",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F5132)
+                            )
+                        }
+                    }
+
+                    // Scan and Add Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { showQrScanner = true },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                                .testTag("scan_qr_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberEmerald),
+                            shape = RoundedCornerShape(23.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Scan Icon",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Scan 2FA QR", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+
+                        Button(
+                            onClick = { showManualAddDialog = true },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                                .testTag("add_manually_button"),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberTeal),
+                            shape = RoundedCornerShape(23.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Manual icon",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Add Manually", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    // Accounts List
+                    if (externalAccounts.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White)
+                                .border(1.dp, Color(0xFFE7E0EC), RoundedCornerShape(16.dp))
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = "No credentials",
+                                    tint = Slate400.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(40.dp)
+                                )
+                                Text(
+                                    "No external accounts scanned yet.",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp,
+                                    color = Slate300
+                                )
+                                Text(
+                                    "Google, GoUslugi, and Binance are supported offline. Swipe or click above to add.",
+                                    fontSize = 11.sp,
+                                    color = Slate400,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            externalAccounts.forEach { acc ->
+                                val code = externalAccountsOtp[acc.id] ?: "000000"
+                                
+                                // Service Branding parameters
+                                val brandColor = when (acc.issuer.lowercase().trim()) {
+                                    "google" -> Color(0xFF4285F4)
+                                    "binance" -> Color(0xFFF0B90B)
+                                    "gouslugi", "gosuslugi", "госуслуги" -> Color(0xFFD32F2F)
+                                    else -> CyberPurple
+                                }
+
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    border = BorderStroke(1.dp, brandColor.copy(alpha = 0.3f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                // Service chip/badge
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(brandColor.copy(alpha = 0.12f))
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = acc.issuer.uppercase(),
+                                                        color = brandColor,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.ExtraBold
+                                                    )
+                                                }
+                                                Text(
+                                                    text = acc.label,
+                                                    fontSize = 12.sp,
+                                                    color = Slate300,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+
+                                            // The running 6-Digit TOTP Token
+                                            Text(
+                                                text = code.chunked(3).joinToString(" "),
+                                                fontSize = 26.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Black,
+                                                color = brandColor,
+                                                letterSpacing = 2.sp,
+                                                modifier = Modifier
+                                                    .clickable {
+                                                        if (code != "000000" && code != "ERRDEC") {
+                                                            clipboardManager.setText(AnnotatedString(code))
+                                                            Toast.makeText(context, "$code Copied!", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                    .testTag("external_token_${acc.id}")
+                                            )
+                                        }
+
+                                        // Actions: Copy & Delete
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            IconButton(
+                                                onClick = {
+                                                    clipboardManager.setText(AnnotatedString(code))
+                                                    Toast.makeText(context, "Code Copied!", Toast.LENGTH_SHORT).show()
+                                                },
+                                                modifier = Modifier.size(36.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Refresh,
+                                                    contentDescription = "Copy code",
+                                                    tint = Slate400,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+
+                                            IconButton(
+                                                onClick = {
+                                                    vaultStore.deleteAccount(acc.id)
+                                                    externalAccounts.clear()
+                                                    externalAccounts.addAll(vaultStore.getAccounts())
+                                                    Toast.makeText(context, "Deleted Account successfully.", Toast.LENGTH_SHORT).show()
+                                                },
+                                                modifier = Modifier.size(36.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = "Delete",
+                                                    tint = Color.Red.copy(alpha = 0.7f),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Locking / Vault management section
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                // Lock the Vault Session securely
+                                isVaultUnlocked = false
+                                derivedAesKey = null
+                                externalAccounts.clear()
+                                Toast.makeText(context, "Session Locked & Cryptographic Memory Flushed.", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .testTag("lock_session_button"),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.DarkGray),
+                            border = BorderStroke(1.dp, Color.Gray),
+                            shape = RoundedCornerShape(20.dp)
+                        ) {
+                            Text("Lock Session", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                vaultStore.clearVault()
+                                isVaultUnlocked = false
+                                derivedAesKey = null
+                                externalAccounts.clear()
+                                Toast.makeText(context, "Vault Completely Wiped & Destroyed.", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier
+                                .weight(1.0f)
+                                .height(40.dp)
+                                .testTag("purge_vault_button"),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                            border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(20.dp)
+                        ) {
+                            Text("Purge Vault Data", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
 
         // CARD 1: Ethereum Wallet Configuration
         Card(
@@ -390,7 +814,7 @@ fun Stateless2FAScreen() {
             }
         }
 
-        // CARD 2: Cryptographic Signature Process
+        // CARD 2: Cryptographic Signature Process (MetaMask Layer)
         if (loadedAddress.isNotEmpty()) {
             Card(
                 modifier = Modifier
@@ -405,26 +829,47 @@ fun Stateless2FAScreen() {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = "Sign Icon",
-                            tint = CyberPurple,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Text(
-                            text = "2. METAMASK SIGNATURE EMULATION",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = Slate100,
-                            letterSpacing = 0.5.sp
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "Sign Icon",
+                                tint = CyberPurple,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "2. METAMASK SIGNATURE EMULATION",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Slate100,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                        
+                        // Small state indicator
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(if (isVaultUnlocked) CyberEmerald.copy(alpha = 0.15f) else Color.Red.copy(alpha = 0.1f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = if (isVaultUnlocked) "DECRYPTED" else "VAULT LOCKED",
+                                color = if (isVaultUnlocked) CyberEmerald else Color.Red,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
                     Text(
-                        text = "Sign the fixed, deterministic system string to verify ownership of your private key and seed your stateless secret.",
+                        text = "Sign the fixed, deterministic system string to verify ownership of your private key, seed your stateless secret, and decrypt your offline 2FA vault.",
                         fontSize = 12.sp,
                         color = Slate300
                     )
@@ -459,12 +904,33 @@ fun Stateless2FAScreen() {
                                 val sig = EthereumCryptoUtils.personalSign(signatureMessage, walletPrivateKey)
                                 generatedSignature = sig
                                 
-                                // Compute secret generator statelessly on-the-fly
+                                // Compute reproducible original secret
                                 val secret = TotpUtil.generateSecretKeyFromSignature(sig)
                                 computedSecretKey = secret
                                 otpauthUri = TotpUtil.getTOTPUri(loadedAddress, secret)
                                 
-                                Toast.makeText(context, "Message Signed Successfully!", Toast.LENGTH_SHORT).show()
+                                // Derive AES key & Verify vault
+                                val keyBytes = AesEncryptionUtils.deriveAesKey(sig)
+                                derivedAesKey = keyBytes
+                                
+                                if (!vaultStore.hasVaultMarker()) {
+                                    // brand new vault initialization
+                                    vaultStore.initializeVaultMarker(keyBytes)
+                                    isVaultUnlocked = true
+                                    externalAccounts.clear()
+                                    externalAccounts.addAll(vaultStore.getAccounts())
+                                    Toast.makeText(context, "Signature generated. New Vault initialized!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    // verify stored vault marker decryption
+                                    if (vaultStore.verifyVaultMarker(keyBytes)) {
+                                        isVaultUnlocked = true
+                                        externalAccounts.clear()
+                                        externalAccounts.addAll(vaultStore.getAccounts())
+                                        Toast.makeText(context, "Wallet Signature Authenticated. Vault Decrypted!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Error: Signature failed to decrypt stored Vault! Is this the correct wallet?", Toast.LENGTH_LONG).show()
+                                    }
+                                }
                             } catch (e: Throwable) {
                                 Toast.makeText(context, "Signing failed: ${e.message}", Toast.LENGTH_LONG).show()
                             }
@@ -481,7 +947,7 @@ fun Stateless2FAScreen() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(imageVector = Icons.Default.Lock, contentDescription = "Lock", modifier = Modifier.size(18.dp))
-                            Text("Sign Deterministic Message", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Sign Message to Decrypt & Sync", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                     }
 
@@ -537,7 +1003,7 @@ fun Stateless2FAScreen() {
             }
         }
 
-        // CARD 3: Stateless TOTP Google Authenticator Setup URI & Secret Output
+        // CARD 3: Stateless Reproducible TOTP Token Section
         if (computedSecretKey.isNotEmpty() && computedSecretKey != "ERRORGENERATE2FA") {
             Card(
                 modifier = Modifier
@@ -567,7 +1033,7 @@ fun Stateless2FAScreen() {
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = "3. TOTP SECRET GENERATION",
+                                text = "3. BASE STATELESS GENERATOR",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
                                 color = Slate100,
@@ -586,7 +1052,7 @@ fun Stateless2FAScreen() {
                     }
 
                     Text(
-                        text = "This 16-character Base32 secret key was generated purely by hashing your cryptographic signature. Anyone can reproduce it statelessly on-the-fly with the same signature.",
+                        text = "This root 16-character base32 key is generated purely by hashing your signature. Tap below to test standard stateless 2FA verification.",
                         fontSize = 12.sp,
                         color = Slate300
                     )
@@ -606,14 +1072,13 @@ fun Stateless2FAScreen() {
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "YOUR 16-CHAR BASE32 SECRET",
+                                text = "YOUR STATELESS 16-CHAR ROOT SECRET",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 10.sp,
                                 color = CyberPurple,
                                 letterSpacing = 1.sp
                             )
                             
-                            // Splitting the secret for readability (XXXX-XXXX-XXXX-XXXX)
                             val readableSecret = computedSecretKey.chunked(4).joinToString(" ")
                             Text(
                                 text = readableSecret,
@@ -712,7 +1177,7 @@ fun Stateless2FAScreen() {
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
-                                text = "ENTER TOTP CODE",
+                                text = "ROOT GENERATED TOTP",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 10.sp,
                                 color = CyberPurple,
@@ -756,7 +1221,7 @@ fun Stateless2FAScreen() {
             }
         }
 
-        // CARD 4: Verification Endpoint Testing (Stateless Backend)
+        // CARD 4: Stateless Verification Endpoint Simulation
         if (computedSecretKey.isNotEmpty() && computedSecretKey != "ERRORGENERATE2FA") {
             Card(
                 modifier = Modifier
@@ -829,9 +1294,6 @@ fun Stateless2FAScreen() {
                             }
                             
                             try {
-                                // Simulate stateless API: /api/2fa/verify
-                                // We verify:
-                                // 1. That the Signature recovers to the designated loadedAddress
                                 val isSignatureValid = EthereumCryptoUtils.verifyPersonalSignature(
                                     signatureMessage,
                                     generatedSignature,
@@ -843,7 +1305,6 @@ fun Stateless2FAScreen() {
                                     return@Button
                                 }
 
-                                // 2. Hash signature to secret key and check TOTP verification
                                 val currentWindow = System.currentTimeMillis() / 1000 / 30
                                 val isTotpValid = TotpUtil.verifyTotp(computedSecretKey, enteredVerifyToken, currentWindow)
                                 
@@ -907,6 +1368,281 @@ fun Stateless2FAScreen() {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // MODAL A: QR Code CameraX scanner Overlay
+    if (showQrScanner) {
+        CameraScannerOverlay(
+            onDismiss = { showQrScanner = false },
+            onQrCodeScanned = { rawCode ->
+                showQrScanner = false
+                val parsed = parseOtpAuthUri(rawCode)
+                if (parsed != null) {
+                    if (derivedAesKey != null) {
+                        try {
+                            val encryptedSecret = AesEncryptionUtils.encrypt(parsed.secret, derivedAesKey!!)
+                            val newAcc = ExternalAccount(
+                                id = UUID.randomUUID().toString(),
+                                label = parsed.label,
+                                issuer = parsed.issuer,
+                                encryptedSecret = encryptedSecret
+                            )
+                            vaultStore.addAccount(newAcc)
+                            externalAccounts.clear()
+                            externalAccounts.addAll(vaultStore.getAccounts())
+                            Toast.makeText(context, "${parsed.issuer} scanned & decrypted successfully!", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Encryption error: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        Toast.makeText(context, "Error: Decrypt session memory lost. Sign again.", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    Toast.makeText(context, "Failed: QR doesn't contain a valid otpauth:// format.", Toast.LENGTH_LONG).show()
+                }
+            }
+        )
+    }
+
+    // MODAL B: Manual Add Account dialog (To ensure 100% testability on any remote screen/emulator)
+    if (showManualAddDialog) {
+        var inputLabel by remember { mutableStateOf("") }
+        var inputIssuer by remember { mutableStateOf("Google") }
+        var inputSecret by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showManualAddDialog = false },
+            title = { Text("Add 2FA Account Manually") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "Enter the credential parameter manually. Ideal for testing and non-camera workspace environments.",
+                        fontSize = 12.sp,
+                        color = Slate400
+                    )
+
+                    // Issuer Dropdown / TextField input
+                    OutlinedTextField(
+                        value = inputIssuer,
+                        onValueChange = { inputIssuer = it },
+                        label = { Text("Service (e.g. Google, GoUslugi, Binance)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("manual_input_issuer")
+                    )
+
+                    OutlinedTextField(
+                        value = inputLabel,
+                        onValueChange = { inputLabel = it },
+                        label = { Text("Account / User Label (e.g. developer@company)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("manual_input_label")
+                    )
+
+                    OutlinedTextField(
+                        value = inputSecret,
+                        onValueChange = { inputSecret = it.uppercase().replace(" ", "") },
+                        label = { Text("Base32 Key (e.g. JBSWY3DPEHPK3PXP)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("manual_input_secret"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = CyberPurple
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val uppercaseSecret = inputSecret.trim().uppercase()
+                        if (inputLabel.isBlank() || inputIssuer.isBlank() || uppercaseSecret.isBlank()) {
+                            Toast.makeText(context, "Please populate all fields.", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        
+                        // Validate Base32 character set
+                        if (!uppercaseSecret.matches(Regex("^[A-Z2-7]+$"))) {
+                            Toast.makeText(context, "Invalid key: Must contain base32 characters only.", Toast.LENGTH_LONG).show()
+                            return@Button
+                        }
+
+                        if (derivedAesKey != null) {
+                            try {
+                                val encryptedSecret = AesEncryptionUtils.encrypt(uppercaseSecret, derivedAesKey!!)
+                                val newAcc = ExternalAccount(
+                                    id = UUID.randomUUID().toString(),
+                                    label = inputLabel,
+                                    issuer = inputIssuer,
+                                    encryptedSecret = encryptedSecret
+                                )
+                                vaultStore.addAccount(newAcc)
+                                externalAccounts.clear()
+                                externalAccounts.addAll(vaultStore.getAccounts())
+                                showManualAddDialog = false
+                                Toast.makeText(context, "${inputIssuer} added successfully!", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Storage error: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Error: Vault is locked.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyberPurple),
+                    modifier = Modifier.testTag("dialog_confirm_button")
+                ) {
+                    Text("Add Account")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showManualAddDialog = false },
+                    modifier = Modifier.testTag("dialog_cancel_button")
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+// CAMERAX LIVE VIEWER AND CAPTURE RUNNER
+@OptIn(ExperimentalGetImage::class, ExperimentalPermissionsApi::class)
+@Composable
+fun CameraScannerOverlay(
+    onDismiss: () -> Unit,
+    onQrCodeScanned: (String) -> Unit
+) {
+    val cameraPermissionState = rememberPermissionState(android.Manifest.permission.CAMERA)
+    
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color.Black
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (cameraPermissionState.status.isGranted) {
+                    val context = LocalContext.current
+                    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+
+                    AndroidView(
+                        factory = { ctx ->
+                            PreviewView(ctx).apply {
+                                scaleType = PreviewView.ScaleType.FILL_CENTER
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        update = { previewView ->
+                            cameraProviderFuture.addListener({
+                                val cameraProvider = cameraProviderFuture.get()
+                                val previewUseCase = CameraPreviewBuilder.Builder().build().also {
+                                    it.setSurfaceProvider(previewView.surfaceProvider)
+                                }
+
+                                val imageAnalysisUseCase = ImageAnalysis.Builder()
+                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                    .build()
+                                    .also {
+                                        it.setAnalyzer(
+                                            ContextCompat.getMainExecutor(context),
+                                            QrCodeAnalyzer { resultString ->
+                                                onQrCodeScanned(resultString)
+                                            }
+                                        )
+                                    }
+
+                                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                                try {
+                                    cameraProvider.unbindAll()
+                                    cameraProvider.bindToLifecycle(
+                                        lifecycleOwner,
+                                        cameraSelector,
+                                        previewUseCase,
+                                        imageAnalysisUseCase
+                                    )
+                                } catch (exc: Exception) {
+                                    // Binds failed silently
+                                }
+                            }, ContextCompat.getMainExecutor(context))
+                        }
+                    )
+                    
+                    // Center scan window visual HUD boundary
+                    Box(
+                        modifier = Modifier
+                            .size(260.dp)
+                            .align(Alignment.Center)
+                            .border(BorderStroke(3.dp, CyberPurple), RoundedCornerShape(24.dp))
+                    )
+                    
+                    Text(
+                        text = "Align standard 2FA QR code within bounds",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 70.dp)
+                            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 14.dp, vertical = 7.dp)
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Permission Needed",
+                            tint = CyberPurple,
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Camera Permission Required",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "VRAV Auth uses camera feeds fully offline to instantly recognize external TOTP secrets.",
+                            color = Slate300,
+                            textAlign = TextAlign.Center,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Button(
+                            onClick = { cameraPermissionState.launchPermissionRequest() },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberPurple),
+                            shape = RoundedCornerShape(24.dp)
+                        ) {
+                            Text("Grant Permission", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                
+                // Scanner Dismiss control
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .align(Alignment.TopEnd)
+                        .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(100))
+                ) {
+                    Icon(imageVector = Icons.Default.Close, contentDescription = "Close scanner drawer", tint = Color.White)
                 }
             }
         }

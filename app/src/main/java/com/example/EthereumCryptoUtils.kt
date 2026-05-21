@@ -10,6 +10,24 @@ import java.util.Arrays
 
 object EthereumCryptoUtils {
 
+    init {
+        setupBouncyCastle()
+    }
+
+    private fun setupBouncyCastle() {
+        try {
+            val provider = java.security.Security.getProvider("BC")
+            if (provider == null) {
+                java.security.Security.addProvider(org.bouncycastle.jce.provider.BouncyCastleProvider())
+            } else if (provider.javaClass.name != "org.bouncycastle.jce.provider.BouncyCastleProvider") {
+                java.security.Security.removeProvider("BC")
+                java.security.Security.addProvider(org.bouncycastle.jce.provider.BouncyCastleProvider())
+            }
+        } catch (t: Throwable) {
+            // Ignore if provider setup is not permited or already loaded
+        }
+    }
+
     // Helper to generate a new ECKeyPair
     fun generateWallet(): Pair<String, String> {
         return try {
@@ -39,13 +57,8 @@ object EthereumCryptoUtils {
             val cleanKey = privateKeyHex.trim().replace("0x", "")
             val ecKeyPair = ECKeyPair.create(Numeric.toBigInt(cleanKey))
             
-            // Ethers message prefix: "\u0019Ethereum Signed Message:\n" + message.length + message
-            val prefix = "\u0019Ethereum Signed Message:\n" + message.length
-            val prefixedMessage = prefix + message
-            val messageBytes = prefixedMessage.toByteArray(StandardCharsets.UTF_8)
-            
-            val msgHash = org.web3j.crypto.Hash.sha3(messageBytes)
-            val signatureData = Sign.signMessage(msgHash, ecKeyPair, false)
+            val messageBytes = message.toByteArray(StandardCharsets.UTF_8)
+            val signatureData = Sign.signPrefixedMessage(messageBytes, ecKeyPair)
             
             // Form standard R, S, V signature hex (65 bytes)
             val rBytes = signatureData.r
@@ -66,11 +79,6 @@ object EthereumCryptoUtils {
     // Verify ethereum signature
     fun verifyPersonalSignature(message: String, signatureHex: String, expectedAddress: String): Boolean {
         return try {
-            val prefix = "\u0019Ethereum Signed Message:\n" + message.length
-            val prefixedMessage = prefix + message
-            val messageBytes = prefixedMessage.toByteArray(StandardCharsets.UTF_8)
-            val msgHash = org.web3j.crypto.Hash.sha3(messageBytes)
-
             val signatureBytes = Numeric.hexStringToByteArray(signatureHex)
             if (signatureBytes.size != 65) return false
 
@@ -80,11 +88,15 @@ object EthereumCryptoUtils {
             if (v < 27) v = (v + 27).toByte() // standard v is usually 27 or 28
 
             val sd = Sign.SignatureData(v, r, s)
-            // Recover public key
-            val publicKey = Sign.signedMessageToKey(msgHash, sd)
+            val messageBytes = message.toByteArray(StandardCharsets.UTF_8)
+            
+            // Recover public key using built-in prefixed method
+            val publicKey = Sign.signedPrefixedMessageToKey(messageBytes, sd)
             val address = "0x" + Keys.getAddress(publicKey)
             address.equals(expectedAddress, ignoreCase = true)
         } catch (e: Throwable) {
+            println("Verification error: ")
+            e.printStackTrace()
             false
         }
     }
