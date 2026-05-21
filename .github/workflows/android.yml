@@ -14,27 +14,28 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    # Нам нужен Java 17 или выше (Gradle 9 отлично работает на JDK 17/21)
+    # Нам нужен Java 17 для работы современной сборки Android
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
         java-version: '17'
 
-    # Устанавливаем ту самую ультра-свежую версию Gradle, которую просит плагин от AI Studio
+    # Ставим нужную версию Gradle и генерируем правильный путь к нему
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '9.3.1'
 
-    # Вырезаем ломающую debug-подпись AI Studio из gradle файлов
+    # Жестко вырезаем дебаг-подпись AI Studio, которая всё ломает
     - name: Fix AI Studio Signing Config Issue
       run: |
         find . -name "build.gradle.kts" -exec sed -i '/signingConfig = signingConfigs.getByName("debugConfig")/d' {} +
 
-    # Собираем APK напрямую через обновленный системный Gradle
+    # Хак: Собираем проект строго через сгенерированный бинарник Gradle 9.3.1
     - name: Build Debug APK
-      run: gradle assembleDebug
+      run: |
+        $GRADLE_HOME/bin/gradle assembleDebug
 
     - name: Upload Artifact (Get your APK here!)
       uses: actions/upload-artifact@v4
