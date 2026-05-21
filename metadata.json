@@ -1,0 +1,6 @@
+{
+  "name": "VRAV Stateless 2FA",
+  "description": "Premium stateless двухфакторная аутентификация (2FA) с криптографическими подписями Polygon/MetaMask и TOTP.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
