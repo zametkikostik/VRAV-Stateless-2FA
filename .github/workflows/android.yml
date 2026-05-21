@@ -25,22 +25,32 @@ jobs:
       with:
         gradle-version: '8.5'
 
-    - name: Prepare Signing and Build Environment
+    # Наш главный хак:
+    # 1. Создаем заглушку для ключа подписи
+    # 2. Вырезаем вызовы плагина KSP из build.gradle.kts, чтобы он не пытался запускать GUI в облаке
+    # 3. Перенаправляем подпись релиза на дебаг
+    - name: Neutralize KSP and Bypass Signing
       run: |
         touch ./my-upload-key.jks
         find . -name "build.gradle.kts" -exec sed -i 's/id("com.google.devtools.ksp")/\/\/ id("com.google.devtools.ksp")/g' {} +
         find . -name "build.gradle.kts" -exec sed -i 's/signingConfig = signingConfigs.getByName("release")/signingConfig = signingConfigs.getByName("debug")/g' {} +
         find . -name "build.gradle.kts" -exec sed -i '/signingConfig = signingConfigs.getByName("debugConfig")/d' {} +
 
-    - name: Build APKs
+    # Запускаем сборку — теперь без KSP проект пролетит компиляцию моментально
+    - name: Build Debug and Release APKs
       run: |
         $GRADLE_HOME/bin/gradle assemble --no-daemon
+
+    - name: Rename APKs for Release
+      run: |
+        mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/VRAV-2FA-Debug.apk
+        mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/VRAV-2FA-Release.apk || mv app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/VRAV-2FA-Release.apk
 
     - name: Upload APKs to GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          app/build/outputs/apk/debug/app-debug.apk
-          app/build/outputs/apk/release/app-release-unsigned.apk
+          app/build/outputs/apk/debug/VRAV-2FA-Debug.apk
+          app/build/outputs/apk/release/VRAV-2FA-Release.apk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
