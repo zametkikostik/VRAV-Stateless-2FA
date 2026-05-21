@@ -1,0 +1,39 @@
+name: Build Android APK (VRAV 2FA)
+
+on:
+  push:
+    branches: [ "main", "master" ] # Запускать сборку при каждом пуше в эти ветки
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+        cache: 'gradle'
+
+    - name: Grant Execute Permission for Gradlew
+      run: chmod +x gradlew
+
+    # Хакерский трюк: удаляем строку debugConfig, из-за которой падает сборка AI Studio приложений
+    - name: Fix AI Studio Signing Config Issue
+      run: |
+        sed -i '/signingConfig = signingConfigs.getByName("debugConfig")/d' app/build.gradle.kts
+
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
+
+    - name: Upload Artifact (Get your APK here!)
+      uses: actions/upload-artifact@v4
+      with:
+        name: vrav-2fa-stateless-apk
+        path: app/build/outputs/apk/debug/app-debug.apk
