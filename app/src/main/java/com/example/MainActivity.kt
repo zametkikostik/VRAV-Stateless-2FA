@@ -59,6 +59,8 @@ import java.security.MessageDigest
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val vaultStore = VravVaultStore(this)
+        Localization.currentLang = vaultStore.getLanguage()
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
@@ -89,14 +91,14 @@ class MainActivity : ComponentActivity() {
                                     }
                                     Column {
                                         Text(
-                                            "VRAV Auth",
+                                            Localization.t("app_title"),
                                             fontWeight = FontWeight.SemiBold,
                                             fontSize = 16.sp,
                                             color = Slate100,
                                             lineHeight = 18.sp
                                         )
                                         Text(
-                                            "HYBRID SECURE VAULT",
+                                            Localization.t("app_subtitle"),
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = CyberPurple,
@@ -110,7 +112,75 @@ class MainActivity : ComponentActivity() {
                                 titleContentColor = Slate100
                             ),
                             modifier = Modifier.border(width = 1.dp, color = Color(0xFFE7E0EC)),
-                            actions = {}
+                            actions = {
+                                var dropdownExpanded by remember { mutableStateOf(false) }
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 12.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF232126))
+                                        .clickable { dropdownExpanded = true }
+                                        .border(1.dp, Color(0xFFE7E0EC).copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        .testTag("language_selector_button")
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = when (Localization.currentLang) {
+                                                "RU" -> "🇷🇺 RU"
+                                                "BG" -> "🇧🇬 BG"
+                                                else -> "🇺🇸 EN"
+                                            },
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Slate100
+                                        )
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = "Switch language",
+                                            tint = CyberTeal,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = dropdownExpanded,
+                                        onDismissRequest = { dropdownExpanded = false },
+                                        modifier = Modifier.background(Color(0xFF232126))
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("English (EN)", color = Slate100, fontSize = 12.sp) },
+                                            onClick = {
+                                                Localization.currentLang = "EN"
+                                                vaultStore.saveLanguage("EN")
+                                                dropdownExpanded = false
+                                            },
+                                            modifier = Modifier.testTag("lang_en")
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Русский (RU)", color = Slate100, fontSize = 12.sp) },
+                                            onClick = {
+                                                Localization.currentLang = "RU"
+                                                vaultStore.saveLanguage("RU")
+                                                dropdownExpanded = false
+                                            },
+                                            modifier = Modifier.testTag("lang_ru")
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Български (BG)", color = Slate100, fontSize = 12.sp) },
+                                            onClick = {
+                                                Localization.currentLang = "BG"
+                                                vaultStore.saveLanguage("BG")
+                                                dropdownExpanded = false
+                                            },
+                                            modifier = Modifier.testTag("lang_bg")
+                                        )
+                                    }
+                                }
+                            }
                         )
                     }
                 ) { innerPadding ->
@@ -240,6 +310,7 @@ fun Stateless2FAScreen() {
     var derivedAesKey by remember { mutableStateOf<ByteArray?>(null) }
     val vaultStore = remember { VravVaultStore(context) }
     val externalAccounts = remember { mutableStateListOf<ExternalAccount>() }
+    var showDecryptionErrorDialog by remember { mutableStateOf(false) }
 
     // Backup & Restore Launchers using Storage Access Framework (SAF)
     val contentResolver = context.contentResolver
@@ -252,9 +323,9 @@ fun Stateless2FAScreen() {
                 contentResolver.openOutputStream(it)?.use { stream ->
                     stream.write(json.toByteArray(Charsets.UTF_8))
                 }
-                Toast.makeText(context, "Encrypted Vault JSON Exported Successfully!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, Localization.t("toast_export_success"), Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                Toast.makeText(context, "Export Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "${Localization.t("toast_export_failed")}: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -269,13 +340,13 @@ fun Stateless2FAScreen() {
                     if (vaultStore.importEncryptedVault(json)) {
                         externalAccounts.clear()
                         externalAccounts.addAll(vaultStore.getAccounts())
-                        Toast.makeText(context, "Encrypted Vault JSON Imported Successfully!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, Localization.t("toast_import_success"), Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(context, "Invalid Vault JSON format!", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, Localization.t("toast_invalid_format"), Toast.LENGTH_LONG).show()
                     }
                 }
             } catch (e: Exception) {
-                Toast.makeText(context, "Import Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "${Localization.t("toast_import_failed")}: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -380,13 +451,13 @@ fun Stateless2FAScreen() {
                             )
                             Column {
                                 Text(
-                                    "🔒 SECURE VAULT DECRYPTED",
+                                    text = "🔒 " + Localization.t("decrypted"),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
                                     color = Color(0xFF0F5132)
                                 )
                                 Text(
-                                    "Saved Accounts Decrypted is Active",
+                                    text = Localization.t("vault_active_desc"),
                                     fontSize = 11.sp,
                                     color = Color(0xFF198754)
                                 )
@@ -440,7 +511,7 @@ fun Stateless2FAScreen() {
                                     tint = Color.White
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Scan 2FA QR", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text(Localization.t("btn_scan_qr"), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
 
@@ -465,7 +536,7 @@ fun Stateless2FAScreen() {
                                     tint = Color.White
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Manually", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text(Localization.t("btn_add_manually"), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                     }
@@ -492,13 +563,13 @@ fun Stateless2FAScreen() {
                                     modifier = Modifier.size(40.dp)
                                 )
                                 Text(
-                                    "No external accounts scanned yet.",
+                                    Localization.t("no_accounts_loaded"),
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 13.sp,
                                     color = Slate300
                                 )
                                 Text(
-                                    "Google, GoUslugi, and Binance are supported offline. Swipe or click above to add.",
+                                    Localization.t("no_accounts_desc"),
                                     fontSize = 11.sp,
                                     color = Slate400,
                                     textAlign = TextAlign.Center
@@ -577,7 +648,7 @@ fun Stateless2FAScreen() {
                                                     .clickable {
                                                         if (code != "000000" && code != "ERRDEC") {
                                                             clipboardManager.setText(AnnotatedString(code))
-                                                            Toast.makeText(context, "$code Copied!", Toast.LENGTH_SHORT).show()
+                                                            Toast.makeText(context, "$code " + Localization.t("toast_copied"), Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
                                                     .testTag("external_token_${acc.id}")
@@ -592,7 +663,7 @@ fun Stateless2FAScreen() {
                                             IconButton(
                                                 onClick = {
                                                     clipboardManager.setText(AnnotatedString(code))
-                                                    Toast.makeText(context, "Code Copied!", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, Localization.t("toast_code_copied"), Toast.LENGTH_SHORT).show()
                                                 },
                                                 modifier = Modifier.size(36.dp)
                                             ) {
@@ -609,7 +680,7 @@ fun Stateless2FAScreen() {
                                                     vaultStore.deleteAccount(acc.id)
                                                     externalAccounts.clear()
                                                     externalAccounts.addAll(vaultStore.getAccounts())
-                                                    Toast.makeText(context, "Deleted Account successfully.", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, Localization.t("toast_deleted_success"), Toast.LENGTH_SHORT).show()
                                                 },
                                                 modifier = Modifier.size(36.dp)
                                             ) {
@@ -639,7 +710,7 @@ fun Stateless2FAScreen() {
                                 isVaultUnlocked = false
                                 derivedAesKey = null
                                 externalAccounts.clear()
-                                Toast.makeText(context, "Session Locked & Cryptographic Memory Flushed.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, Localization.t("toast_session_locked"), Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -649,7 +720,7 @@ fun Stateless2FAScreen() {
                             border = BorderStroke(1.dp, Color.Gray),
                             shape = RoundedCornerShape(20.dp)
                         ) {
-                            Text("Lock Session", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(Localization.t("lock_session"), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedButton(
@@ -658,7 +729,7 @@ fun Stateless2FAScreen() {
                                 isVaultUnlocked = false
                                 derivedAesKey = null
                                 externalAccounts.clear()
-                                Toast.makeText(context, "Vault Completely Wiped & Destroyed.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, Localization.t("toast_vault_wiped"), Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier
                                 .weight(1.0f)
@@ -668,7 +739,7 @@ fun Stateless2FAScreen() {
                             border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f)),
                             shape = RoundedCornerShape(20.dp)
                         ) {
-                            Text("Purge Vault Data", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(Localization.t("purge_vault"), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -698,7 +769,7 @@ fun Stateless2FAScreen() {
                                     tint = Color.White,
                                     modifier = Modifier.size(14.dp)
                                 )
-                                Text("Export Backup", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(Localization.t("export_backup"), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
@@ -723,7 +794,7 @@ fun Stateless2FAScreen() {
                                     tint = Color.White,
                                     modifier = Modifier.size(14.dp)
                                 )
-                                Text("Import Backup", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(Localization.t("import_backup"), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -760,7 +831,7 @@ fun Stateless2FAScreen() {
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            text = "1. WALLET CONTROLLER",
+                            text = Localization.t("card1_title"),
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = Slate100,
@@ -795,7 +866,7 @@ fun Stateless2FAScreen() {
                 }
 
                 Text(
-                    text = "Load an existing Polygon (Ethereum) private key or generate a secure fresh one on-the-fly to perform MetaMask signing.",
+                    text = Localization.t("card1_desc"),
                     fontSize = 12.sp,
                     color = Slate300
                 )
@@ -804,8 +875,8 @@ fun Stateless2FAScreen() {
                 OutlinedTextField(
                     value = privateKeyInput,
                     onValueChange = { privateKeyInput = it },
-                    label = { Text("Private Key (HEX)") },
-                    placeholder = { Text("0x...") },
+                    label = { Text(Localization.t("private_key_label")) },
+                    placeholder = { Text(Localization.t("private_key_placeholder")) },
                     singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(
                         fontFamily = FontFamily.Monospace,
@@ -835,9 +906,9 @@ fun Stateless2FAScreen() {
                                 privateKeyInput = priv
                                 loadedAddress = addr
                                 walletPrivateKey = priv
-                                Toast.makeText(context, "New Secure Key Generated!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, Localization.t("toast_new_key"), Toast.LENGTH_SHORT).show()
                             } catch (e: Throwable) {
-                                Toast.makeText(context, "Wallet Gen Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "${Localization.t("toast_wallet_error")}: ${e.message}", Toast.LENGTH_LONG).show()
                             }
                         },
                         modifier = Modifier
@@ -847,23 +918,23 @@ fun Stateless2FAScreen() {
                         colors = ButtonDefaults.buttonColors(containerColor = CyberPurple),
                         shape = RoundedCornerShape(24.dp)
                     ) {
-                        Text("New Wallet", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Text(Localization.t("btn_new_wallet"), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     }
 
                     // Import/Apply key Button
                     Button(
                         onClick = {
                             if (privateKeyInput.isBlank()) {
-                                Toast.makeText(context, "Please enter a valid private key hex", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, Localization.t("toast_key_valid"), Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
                             try {
                                 val address = EthereumCryptoUtils.loadWallet(privateKeyInput)
                                 loadedAddress = address
                                 walletPrivateKey = privateKeyInput
-                                Toast.makeText(context, "Wallet Loaded Successfully!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, Localization.t("toast_wallet_loaded"), Toast.LENGTH_SHORT).show()
                             } catch (e: Throwable) {
-                                Toast.makeText(context, "Invalid Private key Hex!", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, Localization.t("toast_invalid_key_hex"), Toast.LENGTH_LONG).show()
                             }
                         },
                         modifier = Modifier
@@ -873,7 +944,7 @@ fun Stateless2FAScreen() {
                         colors = ButtonDefaults.buttonColors(containerColor = CyberTeal),
                         shape = RoundedCornerShape(24.dp)
                     ) {
-                        Text("Apply Key", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Text(Localization.t("btn_apply_key"), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     }
                 }
 
@@ -905,7 +976,7 @@ fun Stateless2FAScreen() {
                                             .background(CyberEmerald)
                                     )
                                     Text(
-                                        text = "ACTIVE PUBLIC ADDRESS",
+                                        text = Localization.t("wallet_address"),
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 11.sp,
                                         color = CyberPurple,
@@ -915,7 +986,7 @@ fun Stateless2FAScreen() {
                                 IconButton(
                                     onClick = {
                                         clipboardManager.setText(AnnotatedString(loadedAddress))
-                                        Toast.makeText(context, "Address Copied!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, Localization.t("toast_address_copied"), Toast.LENGTH_SHORT).show()
                                     },
                                     modifier = Modifier.size(24.dp)
                                 ) {
@@ -971,7 +1042,7 @@ fun Stateless2FAScreen() {
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = "2. METAMASK SIGNATURE EMULATION",
+                                text = Localization.t("card2_title"),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
                                 color = Slate100,
@@ -987,7 +1058,7 @@ fun Stateless2FAScreen() {
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = if (isVaultUnlocked) "DECRYPTED" else "VAULT LOCKED",
+                                text = if (isVaultUnlocked) Localization.t("decrypted") else Localization.t("vault_locked"),
                                 color = if (isVaultUnlocked) CyberEmerald else Color.Red,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold
@@ -996,7 +1067,7 @@ fun Stateless2FAScreen() {
                     }
 
                     Text(
-                        text = "Sign the fixed, deterministic system string to verify ownership of your private key, seed your stateless secret, and decrypt your offline 2FA vault.",
+                        text = Localization.t("card2_desc"),
                         fontSize = 12.sp,
                         color = Slate300
                     )
@@ -1038,13 +1109,13 @@ fun Stateless2FAScreen() {
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                "Hardware YubiKey 2FA",
+                                Localization.t("hw_yubikey_2fa"),
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = Slate100
                             )
                             Text(
-                                "Require NFC/USB challenge-response",
+                                Localization.t("hw_yubikey_desc"),
                                 fontSize = 10.sp,
                                 color = Slate400
                             )
@@ -1063,7 +1134,7 @@ fun Stateless2FAScreen() {
                     Button(
                         onClick = {
                             if (walletPrivateKey.isBlank()) {
-                                Toast.makeText(context, "Please configure/import wallet first", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, Localization.t("toast_configure_first"), Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
                             try {
@@ -1088,21 +1159,22 @@ fun Stateless2FAScreen() {
                                         isVaultUnlocked = true
                                         externalAccounts.clear()
                                         externalAccounts.addAll(vaultStore.getAccounts())
-                                        Toast.makeText(context, "Signature generated. New Vault initialized!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, Localization.t("toast_new_vault_init"), Toast.LENGTH_SHORT).show()
                                     } else {
                                         // verify stored vault marker decryption
                                         if (vaultStore.verifyVaultMarker(keyBytes)) {
                                             isVaultUnlocked = true
                                             externalAccounts.clear()
                                             externalAccounts.addAll(vaultStore.getAccounts())
-                                            Toast.makeText(context, "Wallet Signature Authenticated. Vault Decrypted!", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, Localization.t("toast_vault_decrypted"), Toast.LENGTH_SHORT).show()
                                         } else {
-                                            Toast.makeText(context, "Error: Signature failed to decrypt stored Vault! Is this the correct wallet?", Toast.LENGTH_LONG).show()
+                                            showDecryptionErrorDialog = true
+                                            Toast.makeText(context, Localization.t("toast_decryption_error"), Toast.LENGTH_LONG).show()
                                         }
                                     }
                                 }
                             } catch (e: Throwable) {
-                                Toast.makeText(context, "Signing failed: ${e.message}", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "${Localization.t("toast_signing_failed")}: ${e.message}", Toast.LENGTH_LONG).show()
                             }
                         },
                         modifier = Modifier
@@ -1117,7 +1189,7 @@ fun Stateless2FAScreen() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(imageVector = Icons.Default.Lock, contentDescription = "Lock", modifier = Modifier.size(18.dp))
-                            Text("Sign Message to Decrypt & Sync", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text(Localization.t("btn_sign_decrypt"), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                     }
 
@@ -1146,7 +1218,7 @@ fun Stateless2FAScreen() {
                                     IconButton(
                                         onClick = {
                                             clipboardManager.setText(AnnotatedString(generatedSignature))
-                                            Toast.makeText(context, "Signature Copied!", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, Localization.t("toast_signature_copied"), Toast.LENGTH_SHORT).show()
                                         },
                                         modifier = Modifier.size(24.dp)
                                     ) {
@@ -1589,14 +1661,14 @@ fun Stateless2FAScreen() {
 
         AlertDialog(
             onDismissRequest = { showManualAddDialog = false },
-            title = { Text("Add 2FA Account Manually") },
+            title = { Text(Localization.t("dialog_add_title")) },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        "Enter the credential parameter manually. Ideal for testing and non-camera workspace environments.",
+                        Localization.t("dialog_add_desc"),
                         fontSize = 12.sp,
                         color = Slate400
                     )
@@ -1605,7 +1677,7 @@ fun Stateless2FAScreen() {
                     OutlinedTextField(
                         value = inputIssuer,
                         onValueChange = { inputIssuer = it },
-                        label = { Text("Service (e.g. Google, GoUslugi, Binance)") },
+                        label = { Text(Localization.t("dialog_service_label")) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("manual_input_issuer")
                     )
@@ -1613,7 +1685,7 @@ fun Stateless2FAScreen() {
                     OutlinedTextField(
                         value = inputLabel,
                         onValueChange = { inputLabel = it },
-                        label = { Text("Account / User Label (e.g. developer@company)") },
+                        label = { Text(Localization.t("dialog_account_label")) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("manual_input_label")
                     )
@@ -1621,7 +1693,7 @@ fun Stateless2FAScreen() {
                     OutlinedTextField(
                         value = inputSecret,
                         onValueChange = { inputSecret = it.uppercase().replace(" ", "") },
-                        label = { Text("Base32 Key (e.g. JBSWY3DPEHPK3PXP)") },
+                        label = { Text(Localization.t("dialog_secret_label")) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("manual_input_secret"),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -1636,7 +1708,7 @@ fun Stateless2FAScreen() {
                         OutlinedTextField(
                             value = inputDigits,
                             onValueChange = { inputDigits = it.filter { char -> char.isDigit() } },
-                            label = { Text("Digits (6 or 8)") },
+                            label = { Text(Localization.t("dialog_digits_label")) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f).testTag("manual_input_digits")
@@ -1645,7 +1717,7 @@ fun Stateless2FAScreen() {
                         OutlinedTextField(
                             value = inputPeriod,
                             onValueChange = { inputPeriod = it.filter { char -> char.isDigit() } },
-                            label = { Text("Period (30s, 60s)") },
+                            label = { Text(Localization.t("dialog_period_label")) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             modifier = Modifier.weight(1f).testTag("manual_input_period")
@@ -1658,13 +1730,13 @@ fun Stateless2FAScreen() {
                     onClick = {
                         val uppercaseSecret = inputSecret.trim().uppercase()
                         if (inputLabel.isBlank() || inputIssuer.isBlank() || uppercaseSecret.isBlank()) {
-                            Toast.makeText(context, "Please populate all fields.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, Localization.t("toast_populate_all"), Toast.LENGTH_SHORT).show()
                             return@Button
                         }
                         
                         // Validate Base32 character set
                         if (!uppercaseSecret.matches(Regex("^[A-Z2-7]+$"))) {
-                            Toast.makeText(context, "Invalid key: Must contain base32 characters only.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, Localization.t("toast_invalid_base32"), Toast.LENGTH_LONG).show()
                             return@Button
                         }
 
@@ -1686,18 +1758,18 @@ fun Stateless2FAScreen() {
                                 externalAccounts.clear()
                                 externalAccounts.addAll(vaultStore.getAccounts())
                                 showManualAddDialog = false
-                                Toast.makeText(context, "${inputIssuer} added successfully!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "${inputIssuer} " + Localization.t("toast_added_success"), Toast.LENGTH_SHORT).show()
                             } catch (e: Exception) {
-                                Toast.makeText(context, "Storage error: ${e.message}", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "${Localization.t("toast_storage_error")}: ${e.message}", Toast.LENGTH_LONG).show()
                             }
                         } else {
-                            Toast.makeText(context, "Error: Vault is locked.", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, Localization.t("toast_vault_locked_error"), Toast.LENGTH_SHORT).show()
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = CyberPurple),
                     modifier = Modifier.testTag("dialog_confirm_button")
                 ) {
-                    Text("Add Account")
+                    Text(Localization.t("btn_dialog_add"))
                 }
             },
             dismissButton = {
@@ -1705,7 +1777,7 @@ fun Stateless2FAScreen() {
                     onClick = { showManualAddDialog = false },
                     modifier = Modifier.testTag("dialog_cancel_button")
                 ) {
-                    Text("Cancel")
+                    Text(Localization.t("btn_dialog_cancel"))
                 }
             }
         )
@@ -1754,6 +1826,7 @@ fun Stateless2FAScreen() {
                                 externalAccounts.addAll(vaultStore.getAccounts())
                                 Toast.makeText(context, "Hardware Signature Decrypted Successfully!", Toast.LENGTH_SHORT).show()
                             } else {
+                                showDecryptionErrorDialog = true
                                 Toast.makeText(context, "Error: Hardware failed to decrypt Vault! Is this key registered?", Toast.LENGTH_LONG).show()
                             }
                         }
@@ -1860,6 +1933,153 @@ fun Stateless2FAScreen() {
             }
         )
     }
+
+    // MODAL D: Decryption Error & Desynchronization Recovery Dialog
+    if (showDecryptionErrorDialog) {
+        AlertDialog(
+            onDismissRequest = { showDecryptionErrorDialog = false },
+            title = {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Decryption Mismatch Warning",
+                        tint = Color.Red
+                    )
+                    Text(Localization.t("conflict_title"))
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = Localization.t("conflict_desc"),
+                        fontSize = 12.sp,
+                        color = Slate300
+                    )
+                    
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Red.copy(alpha = 0.05f))
+                            .border(1.dp, Color.Red.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Text(Localization.t("conflict_reason1"), fontSize = 11.sp, color = Slate400)
+                        Text(Localization.t("conflict_reason2"), fontSize = 11.sp, color = Slate400)
+                        Text(Localization.t("conflict_reason3"), fontSize = 11.sp, color = Slate400)
+                    }
+
+                    Text(
+                        text = Localization.t("conflict_prompt"),
+                        fontSize = 12.sp,
+                        color = Slate300,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            },
+            confirmButton = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            useYubiKeyForVault = !useYubiKeyForVault
+                            showDecryptionErrorDialog = false
+                            val stateStr = when(Localization.currentLang) {
+                                "RU" -> if (useYubiKeyForVault) "Включено" else "Выключено"
+                                "BG" -> if (useYubiKeyForVault) "Активирано" else "Деактивирано"
+                                else -> if (useYubiKeyForVault) "Enabled" else "Disabled"
+                            }
+                            val endStr = when(Localization.currentLang) {
+                                "RU" -> ". Пожалуйста, подпишите / повторите попытку сейчас!"
+                                "BG" -> ". Моля, подпишете / опитайте отново сега!"
+                                else -> ". Please sign/retry now!"
+                            }
+                            Toast.makeText(
+                                context,
+                                Localization.t("toast_yubikey_toggled") + stateStr + endStr,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberTeal),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                            .testTag("dialog_toggle_yubikey")
+                    ) {
+                        Text(
+                            Localization.t("btn_conflict_toggle_yubi"),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = Color.White
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            showDecryptionErrorDialog = false
+                            importLauncher.launch(arrayOf("application/json", "*/*"))
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberPurple),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                            .testTag("dialog_import_different_vault")
+                    ) {
+                        Text(
+                            Localization.t("btn_conflict_import"),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = Color.White
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            vaultStore.clearVault()
+                            isVaultUnlocked = false
+                            derivedAesKey = null
+                            externalAccounts.clear()
+                            showDecryptionErrorDialog = false
+                            Toast.makeText(context, Localization.t("toast_vault_reset"), Toast.LENGTH_LONG).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                            .testTag("dialog_purge_vault")
+                    ) {
+                        Text(
+                            Localization.t("btn_conflict_reset"),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = Color.White
+                        )
+                    }
+
+                    TextButton(
+                        onClick = { showDecryptionErrorDialog = false },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("dialog_dismiss_error")
+                    ) {
+                        Text(Localization.t("cancel"), color = Color.Gray, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        )
+    }
 }
 
 // CAMERAX LIVE VIEWER AND CAPTURE RUNNER
@@ -1937,7 +2157,7 @@ fun CameraScannerOverlay(
                     )
                     
                     Text(
-                        text = "Align standard 2FA QR code within bounds",
+                        text = Localization.t("camera_align_bounds"),
                         color = Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
@@ -1963,14 +2183,14 @@ fun CameraScannerOverlay(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Camera Permission Required",
+                            text = Localization.t("camera_permission_title"),
                             color = Color.White,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "VRAV Auth uses camera feeds fully offline to instantly recognize external TOTP secrets.",
+                            text = Localization.t("camera_permission_fallback"),
                             color = Slate300,
                             textAlign = TextAlign.Center,
                             fontSize = 13.sp
@@ -1981,7 +2201,7 @@ fun CameraScannerOverlay(
                             colors = ButtonDefaults.buttonColors(containerColor = CyberPurple),
                             shape = RoundedCornerShape(24.dp)
                         ) {
-                            Text("Grant Permission", fontWeight = FontWeight.Bold)
+                            Text(Localization.t("btn_grant_permission"), fontWeight = FontWeight.Bold)
                         }
                     }
                 }

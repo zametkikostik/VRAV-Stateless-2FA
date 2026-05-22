@@ -1,0 +1,406 @@
+package com.example
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
+object Localization {
+    var currentLang by mutableStateOf("EN")
+
+    fun t(key: String): String {
+        return translations[currentLang]?.get(key) ?: translations["EN"]?.get(key) ?: key
+    }
+
+    private val translations = mapOf(
+        "EN" to mapOf(
+            // General
+            "app_title" to "VRAV Auth",
+            "app_subtitle" to "HYBRID SECURE VAULT",
+            "vault_locked" to "VAULT LOCKED",
+            "decrypted" to "DECRYPTED",
+            "lock_session" to "Lock Session",
+            "purge_vault" to "Purge Vault Data",
+            "export_backup" to "Export Backup",
+            "import_backup" to "Import Backup",
+            "cancel" to "Cancel",
+            "success" to "SUCCESS",
+            "failed" to "FAILED",
+
+            // Card 1
+            "card1_title" to "CARD 1: Ethereum Wallet Configuration",
+            "card1_desc" to "Derive a local, reproducible BIP-39 mnemonic/seed directly from any personal cryptographic signature, fully deterministic and secure.",
+            "private_key_label" to "Private Key (HEX)",
+            "private_key_placeholder" to "0x...",
+            "btn_new_wallet" to "New Wallet",
+            "btn_apply_key" to "Apply Key",
+            "wallet_address" to "Wallet Address",
+            "active_layer" to "ACTIVE METAMASK LAYER PATH",
+
+            // Card 2
+            "card2_title" to "CARD 2: Cryptographic Signature Process (MetaMask Layer)",
+            "card2_desc" to "Touch a secure biometric device or approve with MetaMask. The signature below creates a reliable, zero-knowledge seed with 256-bit entropy.",
+            "btn_sign_decrypt" to "Sign Message to Decrypt & Sync",
+            "active_crypto_key" to "Active Cryptographic Key",
+            "hardware_sig_accent" to "HARDWARE SIGNATURE ACCENT",
+            "hw_yubikey_2fa" to "Hardware YubiKey 2FA",
+            "hw_yubikey_desc" to "Require NFC/USB challenge-response",
+
+            // Card 3
+            "card3_title" to "CARD 3: Stateless Reproducible TOTP Token Section",
+            "card3_desc" to "No central database holds your TOTP secret. The seed generates reproducible TOTP secrets instantly on-demand. Scan to add.",
+            "btn_scan_qr" to "Scan 2FA QR",
+            "btn_add_manually" to "Add Manually",
+            "no_accounts_loaded" to "No Accounts Loaded",
+            "no_accounts_desc" to "Your secure vault is empty or currently locked. Unlock your vault or generate a fresh mock wallet configuration above to visualize your 2FA credentials.",
+            "reproducible" to "REPRODUCIBLE",
+            "copy_secret" to "Copy Secret",
+            "copy_uri" to "Copy URI",
+            "issuer_label" to "Issuer",
+            "account_label" to "Label",
+
+            // Card 4
+            "card4_title" to "CARD 4: Stateless Verification Endpoint Simulation",
+            "card4_desc" to "Simulate authentication of a TOTP token against a stateless back-end endpoint using zero network dependencies.",
+            "code_label" to "6-Digit Authenticator Code",
+            "code_placeholder" to "000000",
+            "btn_verify_token" to "Verify Token (Stateless backend call)",
+            "verification_passed" to "VERIFICATION PASSED",
+            "verification_failed" to "VERIFICATION FAILED",
+
+            // YubiKey Dialog
+            "yubikey_dialog_title" to "Hardware YubiKey 2FA",
+            "yubikey_dialog_desc" to "Touch and hold your physical YubiKey against the device's NFC hot spot or connect it via USB-C to execute secure HMAC-SHA256 Challenge-Response.",
+            "yubikey_no_hardware" to "No hardware key? Use the secure virtual emulator below for validation:",
+            "btn_simulate_yubikey" to "Simulate YubiKey Hardware Tap",
+
+            // Decryption Dialog
+            "conflict_title" to "Decryption Conflict",
+            "conflict_desc" to "The cryptographic signature obtained from your wallet failed to decrypt the stored secure vault. This happens when:",
+            "conflict_reason1" to "• You previously enabled Hardware YubiKey 2FA, but are now unlocking without it (or vice-versa).",
+            "conflict_reason2" to "• The configured wallet address/private key does not match the key used during initialization.",
+            "conflict_reason3" to "• A backup JSON has been restored which corresponds to another cryptographic seed.",
+            "conflict_prompt" to "How would you like to resolve this synchronization conflict?",
+            "btn_conflict_toggle_yubi" to "Toggle YubiKey State & Retry",
+            "btn_conflict_import" to "Import Different Backup JSON",
+            "btn_conflict_reset" to "Wipe & Reset Vault Cache (Start Fresh)",
+
+            // Manual Add Dialog
+            "manual_title" to "Add 2FA Account Manually",
+            "manual_service" to "Service (e.g. Google, GoUslugi, Binance)",
+            "manual_user" to "Account / User Label (e.g. developer@company)",
+            "manual_secret" to "Base32 Key (e.g. JBSWY3DPEHPK3PXP)",
+            "manual_digits" to "Digits (6 or 8)",
+            "manual_period" to "Period (30s, 60s)",
+            "btn_add_account" to "Add Account",
+
+            // Camera / Permission
+            "camera_permission_title" to "Camera Permission Required",
+            "camera_permission_desc" to "Please grant camera permission to scan 2FA QR codes.",
+            "camera_permission_fallback" to "VRAV Auth uses camera feeds fully offline to instantly recognize external TOTP secrets.",
+            "camera_align_bounds" to "Align standard 2FA QR code within bounds",
+            "btn_grant_permission" to "Grant Permission",
+
+            // Toasts & Alerts
+            "toast_copied" to "Copied!",
+            "toast_code_copied" to "Code Copied!",
+            "toast_address_copied" to "Address Copied!",
+            "toast_signature_copied" to "Signature Copied!",
+            "toast_secret_copied" to "Secret Key Copied!",
+            "toast_uri_copied" to "Setup Link Copied!",
+            "toast_deleted_success" to "Deleted Account successfully.",
+            "toast_session_locked" to "Session Locked & Cryptographic Memory Flushed.",
+            "toast_vault_wiped" to "Vault Completely Wiped & Destroyed.",
+            "toast_vault_reset" to "Vault Completely Reset. You can now initialize a fresh vault!",
+            "toast_new_key" to "New Secure Key Generated!",
+            "toast_wallet_error" to "Wallet Gen Error",
+            "toast_key_valid" to "Please enter a valid private key hex",
+            "toast_wallet_loaded" to "Wallet Loaded Successfully!",
+            "toast_invalid_key_hex" to "Invalid Private key Hex!",
+            "toast_export_success" to "Encrypted Vault JSON Exported Successfully!",
+            "toast_export_failed" to "Export Failed",
+            "toast_import_success" to "Encrypted Vault JSON Imported Successfully!",
+            "toast_import_invalid" to "Invalid Vault JSON format!",
+            "toast_import_failed" to "Import Failed",
+            "toast_configure_first" to "Please configure/import wallet first",
+            "toast_new_vault_init" to "Signature generated. New Vault initialized!",
+            "toast_vault_decrypted" to "Wallet Signature Authenticated. Vault Decrypted!",
+            "toast_decryption_error" to "Error: Signature failed to decrypt stored Vault! Is this the correct wallet?",
+            "toast_signing_failed" to "Signing failed",
+            "toast_token_digits" to "Token must be exactly 6 digits",
+            "toast_scanned_decrypted" to "scanned & decrypted successfully!",
+            "toast_encryption_error" to "Encryption error",
+            "toast_session_lost" to "Error: Decrypt session memory lost. Sign again.",
+            "toast_invalid_qr" to "Failed: QR doesn't contain a valid otpauth:// format.",
+            "toast_populate_fields" to "Please populate all fields.",
+            "toast_invalid_base32" to "Invalid key: Must contain base32 characters only.",
+            "toast_added_success" to "added successfully!",
+            "toast_storage_error" to "Storage error",
+            "toast_vault_is_locked" to "Error: Vault is locked.",
+            "toast_hw_init" to "Hardware Key Validated. New Vault Initialized!",
+            "toast_hw_decrypt" to "Hardware Signature Decrypted Successfully!",
+            "toast_hw_failed" to "Error: Hardware failed to decrypt Vault! Is this key registered?",
+            "toast_hw_auth_failed" to "Hardware Auth Failed",
+            "toast_yubikey_toggled" to "Toggled YubiKey 2FA to "
+        ),
+        "RU" to mapOf(
+            // General
+            "app_title" to "VRAV Auth",
+            "app_subtitle" to "ГИБРИДНОЕ БЕЗОПАСНОЕ ХРАНИЛИЩЕ",
+            "vault_locked" to "ХРАНИЛИЩЕ ЗАБЛОКИРОВАНО",
+            "decrypted" to "РАСШИФРОВАНО",
+            "lock_session" to "Заблокировать сессию",
+            "purge_vault" to "Очистить все данные",
+            "export_backup" to "Экспорт бэкапа",
+            "import_backup" to "Импорт бэкапа",
+            "cancel" to "Отмена",
+            "success" to "УСПЕШНО",
+            "failed" to "ОШИБКА",
+
+            // Card 1
+            "card1_title" to "ШАГ 1: Конфигурация криптокошелька Ethereum",
+            "card1_desc" to "Получите локальную воспроизводимую BIP-39 мнемонику/ключ напрямую из любой личной криптографической подписи — полностью детерминировано и безопасно.",
+            "private_key_label" to "Приватный ключ (HEX)",
+            "private_key_placeholder" to "0x...",
+            "btn_new_wallet" to "Создать кошелек",
+            "btn_apply_key" to "Использовать ключ",
+            "wallet_address" to "Адрес кошелька",
+            "active_layer" to "АКТИВНЫЙ ПУТЬ СЛОЯ METAMASK",
+
+            // Card 2
+            "card2_title" to "ШАГ 2: Процесс подписи (Слой MetaMask)",
+            "card2_desc" to "Используйте биометрию устройства или подтвердите подпись через MetaMask. Подпись создает надежный ключ с 256-битной энтропией по принципу нулевого разглашения.",
+            "btn_sign_decrypt" to "Подписать и расшифровать хранилище",
+            "active_crypto_key" to "Активный криптографический ключ",
+            "hardware_sig_accent" to "АППАРАТНЫЙ УСИЛИТЕЛЬ ХРАНИЛИЩА",
+            "hw_yubikey_2fa" to "Аппаратный YubiKey 2FA",
+            "hw_yubikey_desc" to "Требовать NFC/USB опрос-ответ",
+
+            // Card 3
+            "card3_title" to "ШАГ 3: Безсерверный генератор TOTP токенов",
+            "card3_desc" to "У нас нет центральной базы данных. Секретный ключ генерирует воспроизводимые TOTP токены мгновенно по запросу. Отсканируйте код.",
+            "btn_scan_qr" to "Сканировать 2FA QR",
+            "btn_add_manually" to "Добавить вручную",
+            "no_accounts_loaded" to "Нет настроенных аккаунтов",
+            "no_accounts_desc" to "Ваше хранилище пусто или заблокировано. Разблокируйте хранилище или сгенерируйте тестовый кошелек выше для просмотра 2FA аккаунтов.",
+            "reproducible" to "ВОСПРОИЗВОДИМЫЙ",
+            "copy_secret" to "Копировать секрет",
+            "copy_uri" to "Копировать URI",
+            "issuer_label" to "Держатель",
+            "account_label" to "Аккаунт",
+
+            // Card 4
+            "card4_title" to "ШАГ 4: Эмуляция системы безсерверной верификации",
+            "card4_desc" to "Имитируем проверку TOTP токена внешней безсерверной системой без сетевых запросов.",
+            "code_label" to "6-значный код безопасности",
+            "code_placeholder" to "000000",
+            "btn_verify_token" to "Проверить код (симуляция эндпоинта)",
+            "verification_passed" to "КОД ПОДТВЕРЖДЕН",
+            "verification_failed" to "КОД НЕВЕРНЫЙ",
+
+            // YubiKey Dialog
+            "yubikey_dialog_title" to "Аппаратный YubiKey 2FA",
+            "yubikey_dialog_desc" to "Приложите и удерживайте физический ключ YubiKey около NFC-антенны устройства или подключите его через USB-C порт для выполнения защищенной HMAC-SHA256 проверки.",
+            "yubikey_no_hardware" to "Нет физического ключа? Используйте симулятор YubiKey для отладки приложений:",
+            "btn_simulate_yubikey" to "Симулировать касание YubiKey",
+
+            // Decryption Dialog
+            "conflict_title" to "Конфликт расшифровки",
+            "conflict_desc" to "Полученная цифровая подпись кошелька не смогла расшифровать сохраненное защищенное хранилище. Это происходит, если:",
+            "conflict_reason1" to "• Ранее вы включили аппаратный YubiKey 2FA, но сейчас пытаетесь войти без него (или наоборот).",
+            "conflict_reason2" to "• Настроенный адрес криптокошелька или приватный ключ не совпадают с исходными данными.",
+            "conflict_reason3" to "• Импортированный файл резервной копии JSON принадлежит другому ключу шифрования.",
+            "conflict_prompt" to "Как вы хотите решить этот конфликт рассинхронизации данных?",
+            "btn_conflict_toggle_yubi" to "Изменить состояние YubiKey и повторить",
+            "btn_conflict_import" to "Импортировать другую резервную копию JSON",
+            "btn_conflict_reset" to "Сбросить и полностью очистить кэш хранилища",
+
+            // Manual Add Dialog
+            "manual_title" to "Добавить аккаунт 2FA вручную",
+            "manual_service" to "Сервис (например, Google, Госуслуги, Binance)",
+            "manual_user" to "Имя аккаунта / Email (например, user@example.com)",
+            "manual_secret" to "Базовый 32-битный ключ (Base32)",
+            "manual_digits" to "Значность (6 или 8 цифр)",
+            "manual_period" to "Период обновления (30с, 60с)",
+            "btn_add_account" to "Добавить аккаунт",
+
+            // Camera / Permission
+            "camera_permission_title" to "Требуется разрешение на камеру",
+            "camera_permission_desc" to "Пожалуйста, предоставьте доступ к камере для сканирования QR-кодов авторизации.",
+            "camera_permission_fallback" to "VRAV Auth использует камеру полностью в офлайн-режиме для мгновенного считывания секретных ключей TOTP.",
+            "camera_align_bounds" to "Поместите стандартный QR-код 2FA в рамку",
+            "btn_grant_permission" to "Предоставить доступ",
+
+            // Toasts & Alerts
+            "toast_copied" to "Скопировано в буфер обмена!",
+            "toast_code_copied" to "Токен скопирован!",
+            "toast_address_copied" to "Адрес скопирован!",
+            "toast_signature_copied" to "Цифровая подпись скопирована!",
+            "toast_secret_copied" to "Секретный ключ скопирован!",
+            "toast_uri_copied" to "Ссылка настройки скопирована!",
+            "toast_deleted_success" to "Аккаунт успешно удален.",
+            "toast_session_locked" to "Сессия заблокирована, криптографическая память очищена.",
+            "toast_vault_wiped" to "Хранилище полностью уничтожено.",
+            "toast_vault_reset" to "Все сохраненные данные сброшены. Теперь вы можете создать новое безопасное хранилище!",
+            "toast_new_key" to "Новый генератор кошелька создан!",
+            "toast_wallet_error" to "Ошибка кошелька",
+            "toast_key_valid" to "Пожалуйста, введите корректный HEX приватного ключа",
+            "toast_wallet_loaded" to "Криптокошелек успешно подключен!",
+            "toast_invalid_key_hex" to "Неверный формат приватного ключа hex!",
+            "toast_export_success" to "Резервная копия хранилища экспортирована успешно!",
+            "toast_export_failed" to "Ошибка экспорта",
+            "toast_import_success" to "Резервная копия импортирована успешно!",
+            "toast_import_invalid" to "Неверный формат JSON файла резервной копии!",
+            "toast_import_failed" to "Ошибка импорта резервной копии",
+            "toast_configure_first" to "Пожалуйста, сначала настройте или сгенерируйте кошелек",
+            "toast_new_vault_init" to "Подпись сгенерирована. Ваше новое хранилище создано!",
+            "toast_vault_decrypted" to "Подпись подтверждена. Данные локального хранилища расшифрованы!",
+            "toast_decryption_error" to "Ошибка: подпись не расшифровала хранилище! Проверьте приватный ключ.",
+            "toast_signing_failed" to "Подпись не удалась",
+            "toast_token_digits" to "Код аутентификатора должен состоять ровно из 6 цифр",
+            "toast_scanned_decrypted" to "успешно отсканирован и расшифрован!",
+            "toast_encryption_error" to "Ошибка шифрования",
+            "toast_session_lost" to "Ошибка: сессия авторизации истекла. Подпишите сообщение снова.",
+            "toast_invalid_qr" to "Ошибка: QR-код не содержит верного формата otpauth://.",
+            "toast_populate_fields" to "Пожалуйста, заполните все обязательные поля.",
+            "toast_invalid_base32" to "Некорректный ключ: разрешены только символы кодировки Base32.",
+            "toast_added_success" to "успешно добавлен в перечень аккаунтов!",
+            "toast_storage_error" to "Ошибка записи данных",
+            "toast_vault_is_locked" to "Заблокировано: сначала откройте ваше хранилище.",
+            "toast_hw_init" to "Ключ YubiKey валидирован. Новое хранилище инициализировано!",
+            "toast_hw_decrypt" to "Аппаратное хранилище расшифровано успешно!",
+            "toast_hw_failed" to "Ошибка: аппаратный ключ не расшифровал сейф. Кошелек не совпадает?",
+            "toast_hw_auth_failed" to "Сбой аппаратной авторизации",
+            "toast_yubikey_toggled" to "Состояние YubiKey переключено на "
+        ),
+        "BG" to mapOf(
+            // General
+            "app_title" to "VRAV Auth",
+            "app_subtitle" to "ХИБРИДЕН СЕЙФ ЗА ДАННИ",
+            "vault_locked" to "СЕЙФЪТ Е ЗАКЛЮЧЕН",
+            "decrypted" to "РАЗКЛЮЧЕН",
+            "lock_session" to "Заключи сесията",
+            "purge_vault" to "Изтрий всички данни",
+            "export_backup" to "Експорт на архив",
+            "import_backup" to "Импорт на архив",
+            "cancel" to "Отказ",
+            "success" to "УСПЕШНО",
+            "failed" to "ГРЕШКА",
+
+            // Card 1
+            "card1_title" to "СТЪПКА 1: Конфигурация на Ethereum криптопортфейл",
+            "card1_desc" to "Извлечете локална възпроизводима BIP-39 мнемоника/ключ директно от всяка лична криптографска подписи — напълно детерминирано и сигурно.",
+            "private_key_label" to "Частен ключ (HEX)",
+            "private_key_placeholder" to "0x...",
+            "btn_new_wallet" to "Нов портфейл",
+            "btn_apply_key" to "Използвай ключ",
+            "wallet_address" to "Адрес на портфейла",
+            "active_layer" to "АКТИВЕН КРИПТОГРАФСКИ ПЪТ НА METAMASK",
+
+            // Card 2
+            "card2_title" to "СТЪПКА 2: Процес на подписване (MetaMask слой)",
+            "card2_desc" to "Докоснете сигурно биометрично устройство или потвърдете с MetaMask. Подписът по-долу генерира надежден ключ с 256-битова ентропия без разкриване на данни.",
+            "btn_sign_decrypt" to "Подпиши за отключване на сейфа",
+            "active_crypto_key" to "Активен криптографски ключ",
+            "hardware_sig_accent" to "ХАРДУЕРНО УСИЛВАНЕ НА СЕЙФА",
+            "hw_yubikey_2fa" to "Хардуерен YubiKey 2FA",
+            "hw_yubikey_desc" to "Изисква NFC/USB проверка преди достъп",
+
+            // Card 3
+            "card3_title" to "СТЪПКА 3: Безсървърен генератор на TOTP токени",
+            "card3_desc" to "Нямаме централна база данни. Секретният ключ генерира TOTP токени напълно локално и мигновено при заявка. Сканирайте код.",
+            "btn_scan_qr" to "Сканирай 2FA QR",
+            "btn_add_manually" to "Добави ръчно",
+            "no_accounts_loaded" to "Няма добавени акаунти",
+            "no_accounts_desc" to "Вашият сейф е празен или заключен. Отключете сейфа или генерирайте тестов портфейл по-горе, за да видите вашите акаунти.",
+            "reproducible" to "ВЪЗПРОИЗВОДИМ",
+            "copy_secret" to "Копирай тайна",
+            "copy_uri" to "Копирай URI",
+            "issuer_label" to "Издател",
+            "account_label" to "Акаунт",
+
+            // Card 4
+            "card4_title" to "СТЪПКА 4: Емулация на локална верификация",
+            "card4_desc" to "Имитира проверка на TOTP токен срещу външен безсървърен ендпоинт без интернет връзка.",
+            "code_label" to "6-цифрен код за сигурност",
+            "code_placeholder" to "000000",
+            "btn_verify_token" to "Провери кода (локална симулация)",
+            "verification_passed" to "КОДЪТ Е ВЕРИФИЦИРАН",
+            "verification_failed" to "НЕВАЛИДЕН КОД СЕКУНДИ",
+
+            // YubiKey Dialog
+            "yubikey_dialog_title" to "Хардуерен YubiKey 2FA",
+            "yubikey_dialog_desc" to "Допрете и задръжте вашия физически YubiKey ключ до NFC антената на телефона или го свържете през USB-C порт за изпълнение на защитена HMAC-SHA256 функция.",
+            "yubikey_no_hardware" to "Нямате хардуерен ключ? Използвайте симулатора на YubiKey:",
+            "btn_simulate_yubikey" to "Симулирай докосване на YubiKey",
+
+            // Decryption Dialog
+            "conflict_title" to "Конфликт при декриптиране",
+            "conflict_desc" to "Полученият цифров подпис не успее да разкодира съхранения локален сейф. Това се случва при:",
+            "conflict_reason1" to "• Преди сте активирали хардуерен YubiKey 2FA, но опитвате без него (или обратното).",
+            "conflict_reason2" to "• Въведеният адрес на кошелька или частния ключ не съвпадат с първоначалните данни.",
+            "conflict_reason3" to "• Импортираният архивен файл JSON съдържа информация за друг ключ.",
+            "conflict_prompt" to "Как бихте искали да разрешите този конфликт при десинхронизация?",
+            "btn_conflict_toggle_yubi" to "Промени YubiKey състояние и опитай пак",
+            "btn_conflict_import" to "Импортирай друг JSON резервен файл",
+            "btn_conflict_reset" to "Почисти и изтрий напълно кэша на сейфа",
+
+            // Manual Add Dialog
+            "manual_title" to "Добави 2FA акаунт ръчно",
+            "manual_service" to "Услуга (например: Google, GoUslugi, Binance)",
+            "manual_user" to "Име на акаунта / Email (например: dev@company.bg)",
+            "manual_secret" to "Базов 32-битен ключ (Base32)",
+            "manual_digits" to "Брой цифри (6 или 8)",
+            "manual_period" to "Период на обновяване (30сек, 60сек)",
+            "btn_add_account" to "Добави акаунт",
+
+            // Camera / Permission
+            "camera_permission_title" to "Изисква се достъп до камера",
+            "camera_permission_desc" to "Моля, разрешете достъп до камерата с цел сканиране на QR кодове за сигурност.",
+            "camera_permission_fallback" to "VRAV Auth използва камерата изцяло в офлайн режим за незабавно автоматично разчитане на секретни TOTP ключове.",
+            "camera_align_bounds" to "Позиционирайте стандартния QR код за 2FA в рамката",
+            "btn_grant_permission" to "Предостави достъп",
+
+            // Toasts & Alerts
+            "toast_copied" to "Копирано в клипборда!",
+            "toast_code_copied" to "Кодът е копиран!",
+            "toast_address_copied" to "Адресът е копиран!",
+            "toast_signature_copied" to "Подписът е копиран!",
+            "toast_secret_copied" to "Секретният ключ е копиран!",
+            "toast_uri_copied" to "Линкът за настройка е копиран!",
+            "toast_deleted_success" to "Акаунтът е изтрит успешно.",
+            "toast_session_locked" to "Сесията е заключена, паметта е изчистена отлично.",
+            "toast_vault_wiped" to "Сейфът е изтрит напълно от паметта.",
+            "toast_vault_reset" to "Кешът на сейфа бе изчистен. Вече можете да инициирате празен сейф!",
+            "toast_new_key" to "Нов частен ключ бе генериран успешно!",
+            "toast_wallet_error" to "Грешка в портфейла",
+            "toast_key_valid" to "Моля, въведете валиден HEX частен ключ",
+            "toast_wallet_loaded" to "Портфейлът е подвързан успешно!",
+            "toast_invalid_key_hex" to "Невалиден частен ключ HEX формат!",
+            "toast_export_success" to "Архивът на сейфа бе експортиран успешно!",
+            "toast_export_failed" to "Неуспешен експорт на архива",
+            "toast_import_success" to "Архивът бе зареден успешно!",
+            "toast_import_invalid" to "Невалиден формат на JSON архивния файл!",
+            "toast_import_failed" to "Неуспешен импорт на архивен файл",
+            "toast_configure_first" to "Моля, първо конфигурирайте портфейл",
+            "toast_new_vault_init" to "Подписът бе генериран. Инициализиран бе нов сейф!",
+            "toast_vault_decrypted" to "Подписът бе потвърден. Сейфът е отключен успешно!",
+            "toast_decryption_error" to "Грешка: Подписът отказа да разкодира сейфа. Правилен портфейл ли е?",
+            "toast_signing_failed" to "Грешка при подписване",
+            "toast_token_digits" to "Кодът трябва да бъде точно 6 цифри",
+            "toast_scanned_decrypted" to "успешно сканиран и декриптиран!",
+            "toast_encryption_error" to "Грешка при шифриране",
+            "toast_session_lost" to "Грешка: Сесията е изгубена. Моля подпишете съобщението отново.",
+            "toast_invalid_qr" to "Грешка: Невалиден QR формат otpauth://.",
+            "toast_populate_fields" to "Моля попълнете всички полета.",
+            "toast_invalid_base32" to "Невалидна тайна: Разрешени са само символи от Base32.",
+            "toast_added_success" to "бе добавен успешно към сейфа!",
+            "toast_storage_error" to "Грешка при запис на акаунта",
+            "toast_vault_is_locked" to "Грешка: Сейфът е заключен.",
+            "toast_hw_init" to "YubiKey е валидиран. Генериран е нов защитен сейф!",
+            "toast_hw_decrypt" to "Хардуерното отключване на сейфа е успешно!",
+            "toast_hw_failed" to "Грешка: Ключът не отключи сейфа. Извикан е грешен портфейл?",
+            "toast_hw_auth_failed" to "Хардуерна неуспешна проверка",
+            "toast_yubikey_toggled" to "Променено състояние на YubiKey: "
+        )
+    )
+}

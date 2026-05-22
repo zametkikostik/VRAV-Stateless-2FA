@@ -153,4 +153,12 @@ class VravVaultStore(private val context: Context) {
             false
         }
     }
+
+    fun getLanguage(): String {
+        return sharedPrefs.getString("app_language", "EN") ?: "EN"
+    }
+
+    fun saveLanguage(lang: String) {
+        sharedPrefs.edit().putString("app_language", lang).apply()
+    }
 }

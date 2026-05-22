@@ -61,7 +61,7 @@ Clone this repository and verify or build via Gradle in your workspace terminal:
 gradle :app:testDebugUnitTest
 
 # Assemble the debug APK
-gradle assembleDebug.
+gradle assembleDebug
 ```
 
 ---
