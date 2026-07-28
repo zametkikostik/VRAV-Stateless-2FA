@@ -23,12 +23,12 @@ jobs:
         distribution: 'zulu'
         java-version: '17'
 
-    # Project uses Gradle 9.3.1 via wrapper (AGP 9.x).
-    # validate-wrappers: false — repo wrapper JAR checksum is not in the
-    # official allow-list (custom/older jar), which blocks setup-gradle@v4.
+    # Repo gradle-wrapper.jar is corrupt ("Invalid or corrupt jarfile").
+    # Install official Gradle 9.3.1 and build with `gradle` (not ./gradlew).
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
       with:
+        gradle-version: '9.3.1'
         validate-wrappers: false
 
     - name: Decode debug keystore
@@ -42,18 +42,14 @@ jobs:
             -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
         fi
-        # Dummy upload key so release signingConfig path resolves if still referenced
         touch ./my-upload-key.jks
 
     - name: Neutralize KSP and use debug signing for CI
       run: |
-        # Comment out KSP plugin id (Room/Moshi ksp not required for APK assemble in this project)
         find . -name "build.gradle.kts" -exec sed -i 's/id("com.google.devtools.ksp")/\/\/ id("com.google.devtools.ksp")/g' {} +
         find . -name "build.gradle.kts" -exec sed -i 's/alias(libs.plugins.google.devtools.ksp)/\/\/ alias(libs.plugins.google.devtools.ksp)/g' {} +
-        # Point release buildType at debugConfig so we do not need real upload keystore secrets
         find . -name "build.gradle.kts" -exec sed -i \
           's/signingConfig = signingConfigs.getByName("release")/signingConfig = signingConfigs.getByName("debugConfig")/g' {} +
-        # Soften ksp dependency lines so resolve does not fail if plugin disabled
         find . -name "build.gradle.kts" -exec sed -i 's/"ksp"(/\/\/ "ksp"(/g' {} +
 
     - name: Ensure .env for secrets plugin
@@ -64,8 +60,7 @@ jobs:
 
     - name: Build Debug and Release APKs
       run: |
-        chmod +x ./gradlew
-        ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
+        gradle assembleDebug assembleRelease --no-daemon --stacktrace
 
     - name: Rename APKs for Release
       run: |
@@ -125,8 +120,6 @@ jobs:
 
           - **Debug APK:** VRAV-2FA-Debug.apk
           - **Release APK:** VRAV-2FA-Release.apk (debug-signed in CI)
-
-          Includes MainActivity / VaultScreen split and stability fixes.
         files: |
           app/build/outputs/apk/debug/VRAV-2FA-Debug.apk
           app/build/outputs/apk/release/VRAV-2FA-Release.apk
